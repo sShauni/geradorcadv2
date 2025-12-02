@@ -17,11 +17,11 @@ ARQUIVO_CSV_LOCAL = os.path.join(PASTA_SCRIPT, "registro_pecas.csv")
 # Opções
 TIPOS_FABRICACAO = {
     "Usinagem (Torno/Fresa)": "-USI",
-    "Corte Laser/Plasma": "-COR",
-    "Dobra/Estamparia": "-DOB",
-    "Soldagem": "-SOL",
+    "Corte Laser/Plasma": "-CRT",
+    "Dobra/Estamparia": "-DBR",
+    "Soldagem": "-SLD",
     "Impressão 3D": "-3DP",
-    "Comercial (Comprado)": "-COM",
+    "Comercial (Comprado)": "-OEM",
     "Montagem": "-ASM"
 }
 
