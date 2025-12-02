@@ -1,0 +1,123 @@
+' Regra iLogic para Exportar DXF de todas as peças Sheet Metal
+' Percorre todos os níveis da montagem
+' Autor: Gemini AI Assistant
+
+Sub Main()
+    ' Verifica se é uma montagem
+    Dim oDoc As Document = ThisApplication.ActiveDocument
+    If oDoc.DocumentType <> kAssemblyDocumentObject Then
+        MessageBox.Show("Esta regra deve ser executada em uma Montagem (.iam)", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        Exit Sub
+    End If
+
+    Dim oAsmDoc As AssemblyDocument = oDoc
+    
+    ' Selecionar ou criar pasta de destino
+    Dim sPath As String = System.IO.Path.GetDirectoryName(oAsmDoc.FullFileName)
+    Dim sFolder As String = sPath & "\DXF_Corte_Laser"
+    
+    If Not System.IO.Directory.Exists(sFolder) Then
+        System.IO.Directory.CreateDirectory(sFolder)
+    End If
+
+    ' Lista para controlar peças já exportadas (evitar duplicatas)
+    Dim exportedList As New ArrayList
+    
+    ' Contador
+    Dim count As Integer = 0
+    
+    ' Iniciar travessia recursiva
+    TraverseAssembly(oAsmDoc.ComponentDefinition.Occurrences, sFolder, exportedList, count)
+    
+    ' Abrir a pasta ao finalizar
+    Process.Start("explorer.exe", sFolder)
+    MessageBox.Show("Processo Concluído!" & vbCrLf & count & " arquivos DXF gerados.", "Exportação DXF", MessageBoxButtons.OK, MessageBoxIcon.Information)
+End Sub
+
+Sub TraverseAssembly(Occurrences As ComponentOccurrences, FolderPath As String, ByRef ExportedList As ArrayList, ByRef Counter As Integer)
+    
+    Dim oOcc As ComponentOccurrence
+    
+    For Each oOcc In Occurrences
+        ' Verifica se está suprimido
+        If oOcc.Suppressed Then Continue For
+        
+        ' Se for um sub-conjunto, entra nele (Recursividade)
+        If oOcc.DefinitionDocumentType = kAssemblyDocumentObject Then
+            TraverseAssembly(oOcc.SubOccurrences, FolderPath, ExportedList, Counter)
+        
+        ' Se for uma peça
+        ElseIf oOcc.DefinitionDocumentType = kPartDocumentObject Then
+            
+            Dim oPartDoc As PartDocument
+            Try
+                oPartDoc = oOcc.Definition.Document
+            Catch
+                Continue For ' Pula se houver erro ao acessar o documento (ex: arquivo faltando)
+            End Try
+            
+            ' Verifica se é Sheet Metal (Subtype específico)
+            ' {9C464203-9BAE-11D3-8BAD-0060B0CE6BB4} é o ID para Sheet Metal
+            If oPartDoc.SubType = "{9C464203-9BAE-11D3-8BAD-0060B0CE6BB4}" Then
+                
+                ' Verifica se já exportamos essa peça
+                Dim docName As String = oPartDoc.FullFileName
+                If ExportedList.Contains(docName) Then Continue For
+                
+                ' Adiciona à lista de processados
+                ExportedList.Add(docName)
+                
+                ' Tenta exportar
+                If ExportDXF(oPartDoc, FolderPath) Then
+                    Counter = Counter + 1
+                End If
+                
+            End If
+        End If
+    Next
+End Sub
+
+Function ExportDXF(oPartDoc As PartDocument, FolderPath As String) As Boolean
+    Try
+        Dim oCompDef As SheetMetalComponentDefinition = oPartDoc.ComponentDefinition
+        
+        ' Verifica se tem Flat Pattern, se não, cria
+        If Not oCompDef.HasFlatPattern Then
+            Try
+                oCompDef.Unfold()
+                oCompDef.FlatPattern.ExitEdit()
+            Catch
+                ' Se falhar ao criar flat pattern (geometria inválida), ignora
+                Return False
+            End Try
+        End If
+        
+        ' Define o nome do arquivo (Usa o Part Number, se vazio usa o nome do arquivo)
+        Dim sPartNumber As String = oPartDoc.PropertySets.Item("Design Tracking Properties").Item("Part Number").Value
+        Dim sFileName As String = System.IO.Path.GetFileNameWithoutExtension(oPartDoc.FullFileName)
+        
+        ' Limpa caracteres inválidos do nome
+        Dim finalName As String = If(String.IsNullOrEmpty(sPartNumber), sFileName, sPartNumber)
+        finalName = String.Join("_", finalName.Split(System.IO.Path.GetInvalidFileNameChars()))
+        
+        Dim sOutFile As String = FolderPath & "\" & finalName & ".dxf"
+        
+        ' --- CONFIGURAÇÃO DA STRING DE EXPORTAÇÃO (INI) ---
+        ' Aqui definimos como o DXF será gerado (versão, camadas, unir linhas, etc)
+        Dim sOut As String
+        sOut = "FLAT PATTERN DXF?AcadVersion=2004&OuterProfileLayer=CORTE&InnerProfileLayer=CORTE" _
+             & "&InvisibleLayers=IV_ARC_CENTERS;IV_TANGENT;IV_ROLL;IV_ROLL_TANGENT;IV_ALTREP_BACK;IV_ALTREP_FRONT;IV_FEATURE_PROFILES_DOWN;IV_FEATURE_PROFILES_UP" _
+             & "&SimplifySplines=True" _
+             & "&MergeProfiles=True" _
+             & "&RebaseGeometry=True"
+        
+        ' Exporta
+        oCompDef.DataIO.WriteDataToFile(sOut, sOutFile)
+        
+        Return True
+        
+    Catch ex As Exception
+        ' Log de erro opcional
+        Return False
+    End Try
+End Function
