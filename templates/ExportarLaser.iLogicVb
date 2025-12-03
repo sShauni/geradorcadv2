@@ -1,20 +1,20 @@
-' Regra iLogic para Exportar DXF com Qtd, Espessura e Material
-' Formato: QTD X ESPESSURA MM - MATERIAL - PARTNUMBER
+' Regra iLogic: Exportar DXF + Arquivo Excel (.xlsx) Formatado
 ' Autor: Gemini AI Assistant
 
 Imports System.Collections.Generic
+Imports System.IO
 
 Sub Main()
     ' Verifica se é uma montagem
     Dim oDoc As Document = ThisApplication.ActiveDocument
     If oDoc.DocumentType <> kAssemblyDocumentObject Then
-        MessageBox.Show("Esta regra deve ser executada em uma Montagem (.iam)", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        MessageBox.Show("Execute em uma Montagem (.iam)", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error)
         Exit Sub
     End If
 
     Dim oAsmDoc As AssemblyDocument = oDoc
     
-    ' Selecionar ou criar pasta de destino
+    ' Configura pasta de destino
     Dim sPath As String = System.IO.Path.GetDirectoryName(oAsmDoc.FullFileName)
     Dim sFolder As String = sPath & "\DXF_Corte_Laser"
     
@@ -22,77 +22,161 @@ Sub Main()
         System.IO.Directory.CreateDirectory(sFolder)
     End If
 
-    ' Dicionários para armazenar contagem e referência aos documentos
-    ' Chave = Caminho completo do arquivo
+    ' Nome do arquivo Excel
+    Dim sExcelFile As String = sFolder & "\Lista_de_Corte.xlsx"
+    
+    ' Variáveis de contagem
+    Dim exportedCount As Integer = 0
+    
+    ' Dicionários para contagem e documentos
     Dim dictQty As New Dictionary(Of String, Integer)
     Dim dictDocs As New Dictionary(Of String, PartDocument)
     
-    ' 1. FASE DE CONTAGEM (Varre a montagem inteira)
+    ' 1. FASE DE CONTAGEM (Varredura)
     TraverseAssembly(oAsmDoc.ComponentDefinition.Occurrences, dictQty, dictDocs)
     
-    ' 2. FASE DE EXPORTAÇÃO
-    Dim countFiles As Integer = 0
-    
-    For Each kvp As KeyValuePair(Of String, PartDocument) In dictDocs
-        Dim filePath As String = kvp.Key
-        Dim oPartDoc As PartDocument = kvp.Value
-        Dim qty As Integer = dictQty(filePath)
+    ' 2. FASE DE CRIAÇÃO DO EXCEL
+    Try
+        MessageBox.Show("Iniciando exportação para Excel..." & vbCrLf & "O Excel abrirá em segundo plano.", "Aguarde", MessageBoxButtons.OK, MessageBoxIcon.Information)
         
-        If ExportDXF(oPartDoc, sFolder, qty) Then
-            countFiles += 1
+        ' Cria Objeto Excel (Late Binding para não precisar de referências)
+        Dim oApp As Object = CreateObject("Excel.Application")
+        oApp.Visible = False ' Roda escondido
+        Dim oBook As Object = oApp.Workbooks.Add
+        Dim oSheet As Object = oBook.ActiveSheet
+        
+        ' --- CABEÇALHO ---
+        Dim headers() As String = {"Item", "Número da Peça", "Espessura (mm)", "Material", "Quantidade", "Nome do Arquivo Gerado"}
+        For i As Integer = 0 To headers.Length - 1
+            oSheet.Cells(1, i + 1).Value = headers(i)
+        Next
+        
+        ' Formata Cabeçalho (Negrito e Fundo Cinza)
+        oSheet.Range("A1:F1").Font.Bold = True
+        oSheet.Range("A1:F1").Interior.Color = 14277081 
+        
+        ' --- PREENCHIMENTO DAS LINHAS ---
+        Dim row As Integer = 2
+        Dim itemCount As Integer = 1
+        
+        For Each kvp As KeyValuePair(Of String, PartDocument) In dictDocs
+            Dim oPartDoc As PartDocument = kvp.Value
+            Dim qty As Integer = dictQty(kvp.Key)
+            
+            ' Coleta Dados
+            Dim sPartNumber As String = GetPartNumber(oPartDoc)
+            Dim sMaterial As String = oPartDoc.ComponentDefinition.Material.Name
+            
+            Dim oCompDef As SheetMetalComponentDefinition = oPartDoc.ComponentDefinition
+            Dim dThickness As Double = oCompDef.Thickness.Value * 10
+            Dim sThickness As String = dThickness.ToString("0.##").Replace(".", ",")
+            
+            Dim finalFileName As String = FormatFileName(qty, sThickness, sMaterial, sPartNumber)
+            
+            ' Escreve no Excel
+            oSheet.Cells(row, 1).Value = itemCount
+            oSheet.Cells(row, 2).Value = sPartNumber
+            oSheet.Cells(row, 3).Value = sThickness
+            oSheet.Cells(row, 4).Value = sMaterial
+            oSheet.Cells(row, 5).Value = qty
+            oSheet.Cells(row, 6).Value = finalFileName
+            
+            ' Gera DXF
+            If ExportDXF(oPartDoc, sFolder, finalFileName) Then
+                exportedCount += 1
+            End If
+            
+            row += 1
+            itemCount += 1
+        Next
+        
+        ' --- FORMATAÇÃO FINAL (CENTRALIZAR) ---
+        Dim dataRange As Object = oSheet.Range("A1:F" & (row - 1))
+        
+        ' Centralizar Horizontalmente e Verticalmente
+        ' xlCenter = -4108
+        dataRange.HorizontalAlignment = -4108
+        dataRange.VerticalAlignment = -4108
+        
+        ' Colocar Bordas
+        dataRange.Borders.LineStyle = 1 ' xlContinuous
+        
+        ' Ajustar Largura das Colunas automaticamente
+        oSheet.Columns("A:F").AutoFit()
+        
+        ' Salvar e Fechar
+        ' Deleta se já existir para não travar perguntando
+        If System.IO.File.Exists(sExcelFile) Then
+            System.IO.File.Delete(sExcelFile)
         End If
-    Next
-    
-    ' Abrir a pasta ao finalizar
-    Process.Start("explorer.exe", sFolder)
-    MessageBox.Show("Processo Concluído!" & vbCrLf & countFiles & " arquivos DXF gerados.", "Exportação DXF", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        
+        oBook.SaveAs(sExcelFile)
+        oBook.Close()
+        oApp.Quit()
+        
+        ' Libera memória
+        System.Runtime.InteropServices.Marshal.ReleaseComObject(oSheet)
+        System.Runtime.InteropServices.Marshal.ReleaseComObject(oBook)
+        System.Runtime.InteropServices.Marshal.ReleaseComObject(oApp)
+        
+        Process.Start("explorer.exe", sFolder)
+        MessageBox.Show("Sucesso!" & vbCrLf & exportedCount & " DXFs gerados." & vbCrLf & "Excel salvo e formatado.", "Concluído", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        
+    Catch ex As Exception
+        MessageBox.Show("Erro ao criar Excel: " & ex.Message, "Erro Excel", MessageBoxButtons.OK, MessageBoxIcon.Error)
+    End Try
 End Sub
 
+' --- SUB-ROTINAS IGUAIS ÀS ANTERIORES ---
+
 Sub TraverseAssembly(Occurrences As ComponentOccurrences, ByRef dictQty As Dictionary(Of String, Integer), ByRef dictDocs As Dictionary(Of String, PartDocument))
-    
     Dim oOcc As ComponentOccurrence
-    
     For Each oOcc In Occurrences
-        ' Verifica se está suprimido
         If oOcc.Suppressed Then Continue For
-        
-        ' Se for um sub-conjunto, entra nele (Recursividade)
         If oOcc.DefinitionDocumentType = kAssemblyDocumentObject Then
             TraverseAssembly(oOcc.SubOccurrences, dictQty, dictDocs)
-        
-        ' Se for uma peça
         ElseIf oOcc.DefinitionDocumentType = kPartDocumentObject Then
-            
             Dim oPartDoc As PartDocument
             Try
                 oPartDoc = oOcc.Definition.Document
             Catch
                 Continue For
             End Try
-            
-            ' Verifica se é Sheet Metal (Subtype)
             If oPartDoc.SubType = "{9C464203-9BAE-11D3-8BAD-0060B0CE6BB4}" Then
-                
                 Dim docName As String = oPartDoc.FullFileName
-                
-                ' Lógica de Contagem
                 If dictQty.ContainsKey(docName) Then
                     dictQty(docName) += 1
                 Else
                     dictQty.Add(docName, 1)
                     dictDocs.Add(docName, oPartDoc)
                 End If
-                
             End If
         End If
     Next
 End Sub
 
-Function ExportDXF(oPartDoc As PartDocument, FolderPath As String, Qty As Integer) As Boolean
+Function GetPartNumber(oDoc As Document) As String
+    Try
+        Dim pn As String = oDoc.PropertySets.Item("Design Tracking Properties").Item("Part Number").Value
+        If String.IsNullOrEmpty(pn) Then Return System.IO.Path.GetFileNameWithoutExtension(oDoc.FullFileName)
+        Return pn
+    Catch
+        Return "ERRO_PN"
+    End Try
+End Function
+
+Function FormatFileName(Qty As Integer, Thickness As String, Material As String, PartNum As String) As String
+    Dim name As String = String.Format("{0}X{1}MM-{2} - {3}", Qty, Thickness, Material, PartNum)
+    Dim invalidChars As Char() = System.IO.Path.GetInvalidFileNameChars()
+    For Each c As Char In invalidChars
+        name = name.Replace(c, "_")
+    Next
+    Return name
+End Function
+
+Function ExportDXF(oPartDoc As PartDocument, FolderPath As String, FileName As String) As Boolean
     Try
         Dim oCompDef As SheetMetalComponentDefinition = oPartDoc.ComponentDefinition
-        
-        ' Verifica se tem Flat Pattern, se não, cria
         If Not oCompDef.HasFlatPattern Then
             Try
                 oCompDef.Unfold()
@@ -101,44 +185,12 @@ Function ExportDXF(oPartDoc As PartDocument, FolderPath As String, Qty As Intege
                 Return False
             End Try
         End If
-        
-        ' --- COLETA DE DADOS PARA O NOME ---
-        
-        ' 1. Part Number
-        Dim sPartNumber As String = oPartDoc.PropertySets.Item("Design Tracking Properties").Item("Part Number").Value
-        If String.IsNullOrEmpty(sPartNumber) Then sPartNumber = System.IO.Path.GetFileNameWithoutExtension(oPartDoc.FullFileName)
-
-        ' 2. Material
-        Dim sMaterial As String = oPartDoc.ComponentDefinition.Material.Name
-        
-        ' 3. Espessura (Vem em cm, converter para mm)
-        ' Usamos o parâmetro Thickness para ter o valor exato
-        Dim dThickness As Double = oCompDef.Thickness.Value * 10 
-        ' Formata para string (ex: 9,52)
-        Dim sThickness As String = dThickness.ToString("0.##").Replace(".", ",")
-
-        ' --- MONTAGEM DO NOME ---
-        ' Formato: 2X9,52MM-SAE1020 - ABC-12345-COR
-        Dim finalName As String = String.Format("{0}X{1}MM-{2} - {3}", Qty, sThickness, sMaterial, sPartNumber)
-        
-        ' Limpa caracteres inválidos do nome (ex: se o material for "Inox 1/4", a barra daria erro)
-        Dim invalidChars As Char() = System.IO.Path.GetInvalidFileNameChars()
-        For Each c As Char In invalidChars
-            finalName = finalName.Replace(c, "_")
-        Next
-        
-        Dim sOutFile As String = FolderPath & "\" & finalName & ".dxf"
-        
-        ' --- EXPORTAÇÃO ---
-        Dim sOut As String
-        sOut = "FLAT PATTERN DXF?AcadVersion=2004&OuterProfileLayer=CORTE&InnerProfileLayer=CORTE" _
+        Dim sOutFile As String = FolderPath & "\" & FileName & ".dxf"
+        Dim sOut As String = "FLAT PATTERN DXF?AcadVersion=2004&OuterProfileLayer=CORTE&InnerProfileLayer=CORTE" _
              & "&InvisibleLayers=IV_ARC_CENTERS;IV_TANGENT;IV_ROLL;IV_ROLL_TANGENT;IV_ALTREP_BACK;IV_ALTREP_FRONT;IV_FEATURE_PROFILES_DOWN;IV_FEATURE_PROFILES_UP" _
              & "&SimplifySplines=True&MergeProfiles=True&RebaseGeometry=True"
-        
         oCompDef.DataIO.WriteDataToFile(sOut, sOutFile)
-        
         Return True
-        
     Catch ex As Exception
         Return False
     End Try
