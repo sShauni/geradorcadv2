@@ -13,7 +13,7 @@ import inventor
 class AppGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("RECADB (1.2)")
+        self.root.title("Invenio (1.2)")
         self.root.geometry("1150x850")
         
         self.cfg = config.carregar()
