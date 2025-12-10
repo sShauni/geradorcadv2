@@ -1,6 +1,8 @@
 import os
 import win32com.client
 import ctypes
+import tempfile
+import subprocess
 
 def obter_app():
     try:
@@ -62,41 +64,55 @@ def capturar_print(app, pasta_raiz, codigo):
 def abrir_arquivo(app, caminho_arquivo):
     if not os.path.exists(caminho_arquivo):
         raise Exception("Arquivo não encontrado.")
-    
     doc = app.Documents.Open(caminho_arquivo, True)
-    
-    # Foca no Inventor
     try:
         app.Visible = True
         hwnd = app.MainFrameHWND
-        ctypes.windll.user32.ShowWindow(hwnd, 9) # Restore
+        ctypes.windll.user32.ShowWindow(hwnd, 3) # SW_MAXIMIZE
         ctypes.windll.user32.SetForegroundWindow(hwnd)
     except: pass
-    
     return doc
 
 def inserir_componente_montagem(app, caminho_arquivo):
     """
-    Método Estável: Insere na origem (0,0,0) e foca a janela.
+    Método Estável: Insere na origem (0,0,0) e maximiza a janela.
     """
-    if not os.path.exists(caminho_arquivo):
-        raise Exception("Arquivo não encontrado.")
-
+    if not os.path.exists(caminho_arquivo): raise Exception("Arquivo não encontrado.")
     doc = app.ActiveDocument
-    if not doc or doc.DocumentType != 12291: # 12291 = IAM
-        raise Exception("Abra uma montagem (.iam) para inserir.")
+    if not doc or doc.DocumentType != 12291: raise Exception("Abra uma montagem (.iam).")
 
     try:
-        # 1. Insere na Matriz Identidade (0,0,0 sem rotação)
         trans_geom = app.TransientGeometry
         matrix = trans_geom.CreateMatrix() 
         doc.ComponentDefinition.Occurrences.Add(caminho_arquivo, matrix)
         
-        # 2. Traz o Inventor para frente
         app.Visible = True
         hwnd = app.MainFrameHWND
-        ctypes.windll.user32.ShowWindow(hwnd, 9) # 9 = SW_RESTORE (Restaura se minimizado)
+        ctypes.windll.user32.ShowWindow(hwnd, 3) # SW_MAXIMIZE
         ctypes.windll.user32.SetForegroundWindow(hwnd)
         
     except Exception as e:
         raise Exception(f"Erro ao inserir componente: {e}")
+
+# --- FUNÇÃO RESTAURADA PARA ILOGIC ---
+def executar_ilogic(app, codigo_vb):
+    doc = app.ActiveDocument
+    if not doc: raise Exception("Nenhum documento aberto.")
+
+    caminho_temp = ""
+    try:
+        f_temp = tempfile.NamedTemporaryFile(mode='w', suffix='.iLogicVb', delete=False, encoding='utf-8')
+        f_temp.write(codigo_vb)
+        caminho_temp = f_temp.name
+        f_temp.close()
+
+        iLogicAddin = app.ApplicationAddIns.ItemById("{3BDD8D79-2179-4B11-8A5A-257B1C0263AC}")
+        automation = iLogicAddin.Automation
+        automation.RunExternalRule(doc, caminho_temp)
+        
+    except Exception as e:
+        raise Exception(f"Erro ao executar iLogic: {e}")
+    finally:
+        if caminho_temp and os.path.exists(caminho_temp):
+            try: os.remove(caminho_temp)
+            except: pass

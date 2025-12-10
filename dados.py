@@ -32,7 +32,9 @@ def ler_registros(caminho_csv, mostrar_inativos=False, termo_busca="", ocultar_d
         status = row[8]
         tipo = row[4]
         
+        # Filtra inativos
         if status == "INATIVO" and not mostrar_inativos: continue
+        # Filtra desenhos
         if ocultar_desenhos and "DESENHO" in tipo.upper(): continue
         
         txt_busca = (row[1] + row[6] + row[7]).lower()
@@ -45,6 +47,9 @@ def gravar_linha(caminho_csv, dados_linha):
         writer = csv.writer(f); writer.writerow(dados_linha)
 
 def editar_registro(caminho_csv, codigo, novos_dados):
+    """
+    Edita os dados e altera o STATUS para 'MODIFICADO' para persistir a cor.
+    """
     linhas = []
     alterado = False
     if os.path.exists(caminho_csv):
@@ -56,11 +61,19 @@ def editar_registro(caminho_csv, codigo, novos_dados):
         writer = csv.writer(f)
         for row in linhas:
             while len(row) < 10: row.append("")
+            
+            # Se encontrar o código, atualiza dados E status
             if row[1] == codigo:
                 if 'titulo' in novos_dados: row[6] = novos_dados['titulo']
                 if 'projeto' in novos_dados: row[5] = novos_dados['projeto']
                 if 'descricao' in novos_dados: row[7] = novos_dados['descricao']
+                
+                # --- MUDANÇA: Grava status MODIFICADO no arquivo ---
+                if row[8] != "INATIVO": # Não reativa se estiver excluído
+                    row[8] = "MODIFICADO"
+                
                 alterado = True
+            
             writer.writerow(row)
     return alterado
 
@@ -90,9 +103,9 @@ def excluir_logico(caminho_csv, codigo, caminho_arquivo):
             writer.writerow(row)
 
 def sincronizar_arquivos(caminho_local_csv, pasta_rede):
+    # (Mantido igual à versão anterior funcional)
     relatorio = []
     if not os.path.exists(caminho_local_csv): return "Sem dados locais."
-    
     try:
         with open(caminho_local_csv, 'r', encoding='utf-8') as f:
             reader = csv.reader(f); next(reader, None); dados_locais = list(reader)
@@ -115,18 +128,15 @@ def sincronizar_arquivos(caminho_local_csv, pasta_rede):
         while len(row) < 10: row.append("")
         cod = row[1]; path_local = row[9]; status = row[8]
         
-        if path_local and os.path.exists(path_local) and status == "ATIVO":
+        # Sincroniza se for ATIVO ou MODIFICADO
+        if path_local and os.path.exists(path_local) and (status == "ATIVO" or status == "MODIFICADO"):
             if cod not in codigos_rede:
                 nome_arq = os.path.basename(path_local)
                 subpasta = ""
-                
-                # --- DETECÇÃO DE SUBPASTAS (3D ou DESENHOS) ---
                 if "desenhos" in path_local:
                     if "\\ED" in path_local or "/ED" in path_local: subpasta = os.path.join("desenhos", "ED")
-                # Se o arquivo estiver dentro de uma pasta chamada "3d"
                 elif os.path.basename(os.path.dirname(path_local)).lower() == "3d":
                     subpasta = "3d"
-                # -----------------------------------------------
                 
                 dest_pasta = os.path.join(pasta_rede, subpasta) if subpasta else pasta_rede
                 os.makedirs(dest_pasta, exist_ok=True)
@@ -134,12 +144,8 @@ def sincronizar_arquivos(caminho_local_csv, pasta_rede):
                 
                 try:
                     shutil.copy2(path_local, dest_final)
-                    
-                    # Copia imagem
                     pasta_img_local = os.path.join(os.path.dirname(path_local), "_IMAGENS")
-                    # Se estiver em subpasta (3d ou desenhos), imagem está na raiz
                     if subpasta: pasta_img_local = os.path.join(os.path.dirname(os.path.dirname(path_local)), "_IMAGENS")
-                    
                     img_local = os.path.join(pasta_img_local, f"{cod}.jpg")
                     if os.path.exists(img_local):
                         pasta_img_rede = os.path.join(pasta_rede, "_IMAGENS")
@@ -157,7 +163,6 @@ def sincronizar_arquivos(caminho_local_csv, pasta_rede):
         with open(caminho_rede_csv, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             for r in novas_linhas: writer.writerow(r)
-            
         shutil.copy2(caminho_local_csv, caminho_local_csv + ".bak")
         with open(caminho_local_csv, 'w', newline='', encoding='utf-8') as f:
             csv.writer(f).writerow(["Data", "Codigo", "Prefixo", "Numero", "Tipo", "Projeto", "Titulo", "Descricao", "Status", "Caminho"])

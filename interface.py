@@ -9,12 +9,13 @@ from PIL import Image, ImageTk
 import config
 import dados
 import inventor
+import scripts_vb 
 
 class AppGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Invenio (1.2)")
-        self.root.geometry("1150x850")
+        self.root.title("Invenio (1.4 - Layout Coluna)")
+        self.root.geometry("1200x850") # Um pouco mais largo para acomodar a coluna
         
         self.cfg = config.carregar()
         self.caminho_db_atual = config.ARQUIVO_CSV_LOCAL
@@ -25,7 +26,6 @@ class AppGUI:
         self.var_ocultar_desenhos = tk.BooleanVar(value=estado_salvo)
         
         self.var_cod = tk.StringVar()
-        self.itens_editados_sessao = set() 
 
         dados.garantir_csv(self.caminho_db_atual)
         
@@ -40,19 +40,22 @@ class AppGUI:
         painel = tk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         painel.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # === ESQUERDA ===
+        # === ESQUERDA (DADOS & GERADOR) ===
         frame_esq = tk.Frame(painel)
-        painel.add(frame_esq, minsize=420)
+        painel.add(frame_esq, minsize=400)
         
+        # Menu Superior
         menubar = tk.Menu(self.root); self.root.config(menu=menubar)
         menu_opt = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Opções", menu=menu_opt)
         menu_opt.add_command(label="Configurar Servidor...", command=self.janela_servidor)
         
+        # Status Rede
         fr_status = tk.Frame(frame_esq, bg="#ddd", pady=5); fr_status.pack(fill="x", pady=2)
         self.lbl_rede = tk.Label(fr_status, text="Modo: LOCAL", bg="#ddd", font=("Arial", 9, "bold")); self.lbl_rede.pack(side="left", padx=10)
         self.btn_sync = tk.Button(fr_status, text="☁ SINCRONIZAR", bg="#4CAF50", fg="white", font=("Arial", 8, "bold"), state="disabled", command=self.acao_sincronizar); self.btn_sync.pack(side="right", padx=10)
         
+        # Formulário
         fr_dados = tk.LabelFrame(frame_esq, text="Dados do Projeto", padx=10, pady=10); fr_dados.pack(fill="x", pady=5)
         tk.Label(fr_dados, text="Projeto:").grid(row=0, column=0, sticky="w")
         self.ent_proj = tk.Entry(fr_dados, width=35); self.ent_proj.insert(0, self.cfg.get("ultimo_projeto", "")); self.ent_proj.grid(row=0, column=1, sticky="w", pady=2)
@@ -61,6 +64,7 @@ class AppGUI:
         tk.Label(fr_dados, text="Descrição:").grid(row=2, column=0, sticky="w")
         self.ent_desc = tk.Entry(fr_dados, width=35); self.ent_desc.grid(row=2, column=1, sticky="w", pady=2)
         
+        # Gerador
         fr_gen = tk.LabelFrame(frame_esq, text="Gerador", padx=10, pady=10); fr_gen.pack(fill="x", pady=5)
         tk.Label(fr_gen, text="Prefixo:").grid(row=0, column=0)
         self.ent_prefixo = tk.Entry(fr_gen, width=10); self.ent_prefixo.insert(0, self.cfg.get("ultimo_prefixo", "PRJ")); self.ent_prefixo.grid(row=0, column=1)
@@ -70,47 +74,72 @@ class AppGUI:
         tk.Button(fr_gen, text="1. GERAR CÓDIGO", bg="#2196F3", fg="white", font=("Arial", 9, "bold"), command=self.acao_gerar_codigo).grid(row=2, column=0, columnspan=3, sticky="ew")
         tk.Button(fr_gen, text="2. SALVAR (CAD / IDW)", bg="#FF9800", fg="black", font=("Arial", 9, "bold"), command=self.acao_salvar).grid(row=3, column=0, columnspan=3, sticky="ew", pady=5)
 
+        # Imagem
         self.lbl_img = tk.Label(frame_esq, text="Visualizador"); self.lbl_img.pack(fill="both", expand=True)
 
-        # === DIREITA ===
-        frame_dir = tk.Frame(painel); painel.add(frame_dir, minsize=500)
+        # === DIREITA (LISTA + COLUNA DE BOTÕES) ===
+        frame_dir = tk.Frame(painel)
+        painel.add(frame_dir, minsize=600)
         
+        # Filtros (Topo)
         fr_top = tk.Frame(frame_dir); fr_top.pack(fill="x", pady=5)
         tk.Label(fr_top, text="Buscar:").pack(side="left")
         self.ent_busca = tk.Entry(fr_top); self.ent_busca.pack(side="left", fill="x", expand=True, padx=5); self.ent_busca.bind("<KeyRelease>", lambda e: self.atualizar_lista())
         tk.Checkbutton(fr_top, text="Ocultar Desenhos", variable=self.var_ocultar_desenhos, command=self.ao_alternar_filtro).pack(side="left", padx=5)
         tk.Checkbutton(fr_top, text="Lixeira", variable=self.var_mostrar_inativos, command=self.atualizar_lista).pack(side="left", padx=5)
         
-        # --- BOTÕES DE AÇÃO ---
-        fr_btn_lst = tk.Frame(frame_dir); fr_btn_lst.pack(fill="x", pady=2)
-        
-        # 1. Abrir no Inventor
-        tk.Button(fr_btn_lst, text="Abrir CAD", command=self.acao_abrir_inventor).pack(side="left", padx=2)
-        
-        # 2. Abrir Pasta (NOVO)
-        tk.Button(fr_btn_lst, text="Abrir Pasta", command=self.acao_abrir_local).pack(side="left", padx=2)
-        
-        tk.Button(fr_btn_lst, text="Editar", bg="#FFF9C4", command=self.acao_editar).pack(side="left", padx=2)
-        
-        # 3. Inserir na Montagem
-        tk.Button(fr_btn_lst, text="Inserir na Montagem (+)", bg="#e3f2fd", font=("Arial", 8, "bold"), command=self.acao_inserir_montagem).pack(side="left", padx=10)
-        
-        tk.Button(fr_btn_lst, text="Excluir", fg="red", command=self.acao_excluir).pack(side="right", padx=2)
+        # Container Principal (Divide Lista e Botões)
+        fr_main_list = tk.Frame(frame_dir)
+        fr_main_list.pack(fill="both", expand=True)
 
+        # 1. COLUNA DE BOTÕES (LADO DIREITO)
+        fr_coluna_btn = tk.Frame(fr_main_list, padx=5)
+        fr_coluna_btn.pack(side="right", fill="y")
+
+        # Grupo: Acesso
+        tk.Label(fr_coluna_btn, text="--- Acesso ---", fg="gray").pack(pady=(0,2))
+        tk.Button(fr_coluna_btn, text="Abrir no Inventor", bg="#e3f2fd", command=self.acao_abrir_inventor).pack(fill="x", pady=2)
+        tk.Button(fr_coluna_btn, text="Abrir Pasta", command=self.acao_abrir_local).pack(fill="x", pady=2)
+        
+        # Grupo: Montagem
+        tk.Label(fr_coluna_btn, text="--- Montagem ---", fg="gray").pack(pady=(10,2))
+        tk.Button(fr_coluna_btn, text="Inserir (+)", bg="#4CAF50", fg="white", font=("Arial", 9, "bold"), command=self.acao_inserir_montagem).pack(fill="x", pady=2)
+        
+        # Grupo: Dados
+        tk.Label(fr_coluna_btn, text="--- Dados ---", fg="gray").pack(pady=(10,2))
+        tk.Button(fr_coluna_btn, text="Editar Dados", bg="#FFF9C4", command=self.acao_editar).pack(fill="x", pady=2)
+        tk.Button(fr_coluna_btn, text="Excluir", fg="red", command=self.acao_excluir).pack(fill="x", pady=2)
+        
+        # Grupo: Automação
+        tk.Label(fr_coluna_btn, text="--- Automação ---", fg="gray").pack(pady=(10,2))
+        tk.Button(fr_coluna_btn, text="Exportar Laser", bg="#E0F7FA", command=self.acao_exportar_laser).pack(fill="x", pady=2)
+        tk.Button(fr_coluna_btn, text="Lista Fixadores", bg="#E0F7FA", command=self.acao_lista_fixadores).pack(fill="x", pady=2)
+
+        # 2. TREEVIEW (LADO ESQUERDO - Ocupa o resto)
         cols = ("Codigo", "Tipo", "Titulo", "Descricao", "Status")
-        self.tree = ttk.Treeview(frame_dir, columns=cols, show="headings")
-        for c in cols: self.tree.heading(c, text=c)
-        self.tree.column("Codigo", width=100); self.tree.column("Status", width=60)
+        self.tree = ttk.Treeview(fr_main_list, columns=cols, show="headings")
+        
+        # Configuração das Colunas
+        self.tree.heading("Codigo", text="Código"); self.tree.column("Codigo", width=90)
+        self.tree.heading("Tipo", text="Tipo"); self.tree.column("Tipo", width=90)
+        self.tree.heading("Titulo", text="Título"); self.tree.column("Titulo", width=180)
+        self.tree.heading("Descricao", text="Descrição"); self.tree.column("Descricao", width=180)
+        self.tree.heading("Status", text="St"); self.tree.column("Status", width=40)
         
         self.tree.tag_configure("INATIVO", foreground="gray")
         self.tree.tag_configure("DESENHO", foreground="blue")
         self.tree.tag_configure("MODIFICADO", foreground="#00aaaa", font=("Arial", 9, "bold"))
         
-        scroll = ttk.Scrollbar(frame_dir, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscroll=scroll.set); scroll.pack(side="right", fill="y"); self.tree.pack(side="left", fill="both", expand=True)
-        self.tree.bind("<<TreeviewSelect>>", self.ao_selecionar); self.tree.bind("<Double-1>", lambda e: self.acao_abrir_inventor())
+        scroll = ttk.Scrollbar(fr_main_list, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscroll=scroll.set)
+        
+        scroll.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
+        
+        self.tree.bind("<<TreeviewSelect>>", self.ao_selecionar)
+        self.tree.bind("<Double-1>", lambda e: self.acao_abrir_inventor())
 
-    # --- LÓGICA ---
+    # --- LÓGICA (Mantida idêntica à V29) ---
 
     def ao_alternar_filtro(self):
         self.cfg["ocultar_desenhos"] = self.var_ocultar_desenhos.get()
@@ -149,18 +178,34 @@ class AppGUI:
                 path_dwg = os.path.join(pasta, "desenhos", "ED", f"{nome}-DT.idw")
                 if os.path.exists(path_dwg):
                     inventor.atualizar_propriedades(app, path_dwg, novos)
-                    self.itens_editados_sessao.add(f"{nome}-DT.idw")
                 else:
                     if "3d" in pasta.lower():
                         path_dwg_alt = os.path.join(os.path.dirname(pasta), "desenhos", "ED", f"{nome}-DT.idw")
                         if os.path.exists(path_dwg_alt):
                             inventor.atualizar_propriedades(app, path_dwg_alt, novos)
-                            self.itens_editados_sessao.add(f"{nome}-DT.idw")
 
             if not sucesso_inv and app: messagebox.showwarning("Aviso", "Arquivo bloqueado. Atualizando apenas CSV.")
             dados.editar_registro(self.caminho_db_atual, cod, novos)
-            self.itens_editados_sessao.add(cod); self.atualizar_lista(); top.destroy()
+            self.atualizar_lista(); top.destroy()
         tk.Button(top, text="Salvar Alterações", bg="#4CAF50", fg="white", command=salvar_edicao).pack(pady=15)
+
+    def acao_exportar_laser(self):
+        app = inventor.obter_app()
+        if not app: return messagebox.showerror("Erro", "Inventor fechado.")
+        if app.ActiveDocument and app.ActiveDocument.DocumentType == 12291:
+            if messagebox.askyesno("Confirmar", "Gerar DXFs e Lista de Corte?"):
+                try: inventor.executar_ilogic(app, scripts_vb.SCRIPT_EXPORTAR_LASER)
+                except Exception as e: messagebox.showerror("Erro", str(e))
+        else: messagebox.showwarning("Aviso", "Abra uma Montagem (.iam).")
+
+    def acao_lista_fixadores(self):
+        app = inventor.obter_app()
+        if not app: return messagebox.showerror("Erro", "Inventor fechado.")
+        if app.ActiveDocument and app.ActiveDocument.DocumentType == 12291:
+            if messagebox.askyesno("Confirmar", "Gerar Lista de Fixadores?"):
+                try: inventor.executar_ilogic(app, scripts_vb.SCRIPT_LISTA_FIXADORES)
+                except Exception as e: messagebox.showerror("Erro", str(e))
+        else: messagebox.showwarning("Aviso", "Abra uma Montagem (.iam).")
 
     def acao_gerar_codigo(self):
         prefixo = self.ent_prefixo.get().upper(); sufixo = config.TIPOS_FABRICACAO[self.cb_tipo.get()]
@@ -209,10 +254,9 @@ class AppGUI:
                 messagebox.showinfo("Sucesso", "Peça Salva!")
         except Exception as e: messagebox.showerror("Erro", f"Falha ao salvar:\n{e}")
 
-    # --- FUNÇÃO DE INSERÇÃO NA MONTAGEM ---
     def acao_inserir_montagem(self):
         sel = self.tree.selection()
-        if not sel: return messagebox.showwarning("Aviso", "Selecione uma peça.")
+        if not sel: return messagebox.showwarning("Aviso", "Selecione uma peça na lista.")
         caminho = self.tree.item(sel[0])['tags'][1]
         
         if not caminho or not os.path.exists(caminho):
@@ -222,7 +266,6 @@ class AppGUI:
         if not app: return messagebox.showerror("Erro", "Inventor fechado.")
         
         try:
-            # Chama a função VBScript do inventor.py
             inventor.inserir_componente_montagem(app, caminho)
         except Exception as e:
             messagebox.showerror("Erro", str(e))
@@ -246,7 +289,7 @@ class AppGUI:
         except Exception as e: messagebox.showerror("Erro", str(e))
 
     def registrar_db(self, cod, tipo, caminho, titulo):
-        linha = [datetime.now().strftime("%Y-%m-%d %H:%M"), cod, self.ent_prefixo.get(), "", tipo, self.ent_projeto.get(), titulo, self.ent_desc.get(), "ATIVO", caminho]
+        linha = [datetime.now().strftime("%Y-%m-%d %H:%M"), cod, self.ent_prefixo.get(), "", tipo, self.ent_proj.get(), titulo, self.ent_desc.get(), "ATIVO", caminho]
         dados.gravar_linha(self.caminho_db_atual, linha)
         self.cfg["ultimo_prefixo"] = self.ent_prefixo.get(); self.cfg["ultimo_projeto"] = self.ent_proj.get()
         config.salvar(self.cfg)
@@ -257,12 +300,11 @@ class AppGUI:
         registros = dados.ler_registros(self.caminho_db_atual, self.var_mostrar_inativos.get(), self.ent_busca.get(), self.var_ocultar_desenhos.get())
         for row in registros:
             tag = "ATIVO"
-            if row[8] == "INATIVO": tag = "INATIVO"
+            status = row[8]
+            if status == "INATIVO": tag = "INATIVO"
+            elif status == "MODIFICADO": tag = "MODIFICADO"
             elif "DESENHO" in row[4].upper(): tag = "DESENHO"
-            codigo_limpo = row[1]
-            nome_arquivo = os.path.basename(row[9]) if row[9] else ""
-            if codigo_limpo in self.itens_editados_sessao or nome_arquivo in self.itens_editados_sessao:
-                if tag != "INATIVO": tag = "MODIFICADO"
+            
             self.tree.insert("", "end", values=(row[1], row[4], row[6], row[7], row[8]), tags=(tag, row[9]))
 
     def ao_selecionar(self, e):

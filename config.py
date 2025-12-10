@@ -22,7 +22,8 @@ TIPOS_FABRICACAO = {
     "Soldagem": "-SLD",
     "Impressão 3D": "-3DP",
     "Comercial (Comprado)": "-OEM",
-    "Montagem": "-ASM"
+    "Montagem": "-ASM",
+    "Esboço": "-SKT"
 }
 
 def carregar():
