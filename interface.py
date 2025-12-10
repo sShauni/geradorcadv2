@@ -14,7 +14,7 @@ import scripts_vb
 class AppGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Invenio (1.4 - Layout Coluna)")
+        self.root.title("Invenio (1.2)")
         self.root.geometry("1200x850") # Um pouco mais largo para acomodar a coluna
         
         self.cfg = config.carregar()
