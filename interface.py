@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
                                QComboBox, QCheckBox, QMessageBox, QFileDialog, 
                                QMenu, QGroupBox, QDialog, QFormLayout)
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QRect, QSize
 from PySide6.QtGui import QColor, QFont, QPixmap, QImage, QIcon
 
 # --- Importações do Projeto ---
@@ -20,10 +20,20 @@ import dados
 import inventor
 import scripts_vb 
 
+# ### CORREÇÃO 1: RESOLUÇÃO BORRADA (HIGH DPI) ###
+# Isso avisa o Windows que o App sabe lidar com alta resolução, 
+# evitando que o Windows "estique" a janela e deixe borrado.
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except Exception:
+    pass # Windows 7 ou anterior pode não ter essa chamada, ignorar.
+
+os.environ["QT_FONT_DPI"] = "96" # Ajuda a manter fontes consistentes
+
 # === ESTILO VISUAL LIMPO & CORRIGIDO ===
 QSS_INVENTOR = """
 /* === RESET GLOBAL === */
-QMainWindow { background-color: #2E3440; }
+QMainWindow { background-color: #454e61; }
 QWidget { 
     color: #E0E0E0; 
     font-family: 'Segoe UI', Arial; 
@@ -34,8 +44,70 @@ QWidget {
 /* === FRAMES E GRUPOS === */
 QFrame { border: none; background: transparent; }
 QFrame#FrameEsquerdo {
-    background-color: #2E3440;
+    background-color: #303642;
     border-right: 1px solid #3B4252;
+}
+
+QDialog {
+    background-color: #2F3642; /* Fundo Escuro Base */
+    border: 1px solid #454E61;
+}
+
+QLabel {
+    color: #A0A8B8; /* Texto cinza claro para rótulos */
+    font-size: 11px;
+    font-weight: bold;
+    font-family: 'Segoe UI';
+}
+
+/* Títulos das Seções (ex: "CONFIGURAÇÕES DE REDE") */
+QLabel#TituloSecao {
+    color: #6D7685; /* Cinza mais escuro, estilo caixa alta */
+    font-weight: bold;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #3E4654; /* Linha separadora */
+}
+
+QLineEdit {
+    background-color: #262B35; /* Fundo do input mais escuro */
+    border: 1px solid #3E4654;
+    color: white;
+    padding: 6px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+QLineEdit:focus { border: 1px solid #88C0D0; }
+
+/* === CHECKBOX === */
+QCheckBox {
+    color: #E0E0E0;
+    font-size: 13px;    /* Tamanho da fonte */
+    spacing: 8px;       /* Espaço entre o quadrado e o texto */
+}
+
+/* O quadrado (Indicador) */
+QCheckBox::indicator {
+    width: 18px;        /* Largura do quadrado */
+    height: 18px;       /* Altura do quadrado */
+    background-color: transparent;
+    border: 1px solid #748596;
+    border-radius: 1px; /* Bordas levemente arredondadas */
+}
+
+/* Quando passa o mouse */
+QCheckBox::indicator:hover {
+    border: 1px solid #FFFFFF;
+}
+
+/* Quando está marcado (Checked) */
+QCheckBox::indicator:checked {
+    background-color: white;
+    border: 1px solid white;
+    image: url(checker.png);
+    
+    /* DICA: Se quiser uma imagem de "visto" real, você precisaria de um arquivo .png
+       e usaria: image: url(check.png); 
+       Sem imagem, ele fica um quadrado azul sólido, estilo "flat". */
 }
 
 QGroupBox { 
@@ -56,20 +128,17 @@ QLineEdit, QComboBox {
     color: white; 
 }
 QLineEdit:focus, QComboBox:focus { 
-    border: 1px solid #00AFFF; 
+    border: 1px solid #00AFFF;
+    border-radius: 3px;
 }
 QLineEdit:read-only { 
-    background-color: #292E39; color: #88C0D0; font-weight: bold; border: 1px solid #3B4252;
+    background-color: #303642; color: #88C0D0; font-weight: bold; border: none; border-bottom: 2px solid #748596;
 }
 
-/* --- CORREÇÃO DO MENU SUSPENSO (BUG VISUAL) --- */
-QComboBox::drop-down {
-    border: none;
-    width: 20px;
-}
-/* A lista interna que abre ao clicar */
+/* --- CORREÇÃO DO MENU SUSPENSO --- */
+QComboBox::drop-down { border: none; width: 20px; }
 QComboBox QAbstractItemView {
-    background-color: #3B4252; /* Fundo Sólido Escuro */
+    background-color: #454F61;
     color: white;
     border: 1px solid #4C566A;
     selection-background-color: #454F61;
@@ -78,16 +147,16 @@ QComboBox QAbstractItemView {
 
 /* === TABELA === */
 QTableWidget {
-    background-color: #454F61; 
-    border: 1px solid #3B4252; 
+    background-color: #475163; 
+    border: none; 
     outline: none;
 }
-    QTableWidget::item {
-    border-bottom: 1px solid #525E70; /* Cor da linha */
+QTableWidget::item {
+    border-bottom: 1px solid #525E70; 
     padding-left: 5px;
 }
 QHeaderView::section {
-    background-color: #2E3440; color: white; padding: 6px;
+    background-color: #333a49; color: white; padding: 6px;
     border: none; border-bottom: 2px solid #333B49; font-weight: bold;
 }
 QTableWidget::item:selected {
@@ -99,37 +168,54 @@ QTableWidget::item:hover { background-color: #323846; }
 
 /* === BOTÕES === */
 QPushButton {
-    background-color: #2E3440; 
-    border: 1px solid #758497; border-style: solid; 
+    background-color: transparent; 
+    border: none;
     padding: 4px 15px; border-radius: 2px; color: white;
-    min-height: 24px; max-height: 28px;
+    min-height: 30px; max-height: 34px;
+    font-weight: bold;
+    font-size: 8;
 }
-QPushButton:hover {
-    background-color: #2E3440;
-    border: 1px solid white;
+QPushButton:hover { background-color: #3a4252; border: none; }
+QPushButton:pressed { background-color: #435C74; border: 1px solid #3D84AA; border-radius: 2px; }
+    
+/* Botões de Ação (Direita) - Alinhamento Texto + Ícone */
+QPushButton.BtnAcao { 
+    text-align: left; 
+    padding-left: 15px; /* Mais espaço para o ícone não grudar na borda */
 }
 
-QPushButton.BtnAcao { text-align: left; padding-left: 10px; }
-
+/* --- BOTÃO DE CONFIGURAÇÃO (ENGRENAGEM) --- */
+QPushButton#BtnConfig {
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    min-width: 32px; max-width: 32px; /* Quadrado */
+}
+QPushButton#BtnConfig:hover {
+    background-color: #1e2229; /* Fundo suave ao passar o mouse */
+    border: none;
+}
 /* Destaques Esquerda */
 QPushButton#BtnGerar {
-    background-color: #2E3440; border: 1px solid #758497; border-style: solid;
+    background-color: transparent; border: 1px solid #748596; border-style: solid;
     min-height: 32px; max-height: 32px; font-weight: bold; font-size: 13px;
 }
 QPushButton#BtnGerar:hover { background-color: #2E3440; border: 1px solid white; }
+QPushButton#BtnGerar:pressed { background-color: transparent; border: 1px solid #515d6c; border-radius: 2px; }
 
 QPushButton#BtnSalvarEsq {
-    background-color: #2E3440; border: 1px solid #758497; border: 1px solid #758497; border-style: solid;
+    background-color: #2E3440; border: 1px solid #748596; border: 1px solid #748596; border-style: solid;
     color: #FFFFFF; min-height: 32px; max-height: 32px; font-weight: bold; font-size: 13px;
 }
-QPushButton#BtnSalvarEsq:hover { background-color: #2E3440; border: 1px solid white; }
+QPushButton#BtnSalvarEsq:hover { background-color: transparent; border: 1px solid white; }
+QPushButton#BtnSalvarEsq:pressed { background-color: transparent; border: 1px solid #515d6c; border-radius: 2px; }
 
 QPushButton#BtnSync {
-    background-color: #2E3440; border: 1px solid #758497; border-style: solid;
+    background-color: transparent; border: 1px solid #748596; border-style: solid;
     font-size: 11px; color: white; border: 1px solid #4C566A;
 }
-
-QPushButton#BtnSync:hover { background-color: #2E3440; border: 1px solid white; }
+QPushButton#BtnSync:hover { background-color: transparent; border: 1px solid white; }
+QPushButton#BtnSync:pressed { background-color: transparent; border: 1px solid #515d6c; border-radius: 2px; }
 
 QScrollBar:vertical { background: #454F61; width: 6px; }
 QScrollBar::handle:vertical { background: #5D697E; min-height: 15px; border-radius: 3px; }
@@ -139,10 +225,28 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Invenio 2.0")
-        self.resize(1366, 768)
+        
+        # ### CORREÇÃO 2: APLICAÇÃO DE GEOMETRIA SALVA ###
+        # Carrega config
+        self.cfg = config.carregar()
+        
+        # Define tamanho padrão inicial
+        default_rect = [100, 100, 1280, 720] 
+        
+        # Tenta carregar do config
+        rect_salvo = self.cfg.get("janela_geo", default_rect)
+        is_maximized = self.cfg.get("janela_max", False)
+
+        # Aplica geometria (x, y, w, h)
+        if len(rect_salvo) == 4:
+            self.setGeometry(*rect_salvo)
+
+        # Se estava maximizado, maximiza agora
+        if is_maximized:
+            self.showMaximized()
+
         self.setStyleSheet(QSS_INVENTOR)
         
-        self.cfg = config.carregar()
         self.caminho_db_atual = config.ARQUIVO_CSV_LOCAL
         self.caminho_rede_ativo = None
         
@@ -151,13 +255,60 @@ class MainWindow(QMainWindow):
         self.icon_iam = QIcon(os.path.join(path_base, "iam.ico"))
         self.icon_idw = QIcon(os.path.join(path_base, "idw.ico"))
         
+        self.ico_config = QIcon(os.path.join(path_base, "conf.png"))
+        self.ico_abrir  = QIcon(os.path.join(path_base, "open.png"))
+        self.ico_pasta  = QIcon(os.path.join(path_base, "folder.png"))
+        self.ico_ins    = QIcon(os.path.join(path_base, "insert.png"))
+        self.ico_edit   = QIcon(os.path.join(path_base, "edit.png"))
+        self.ico_del    = QIcon(os.path.join(path_base, "trash.png"))
+        
+        self.ico_gerar  = QIcon(os.path.join(path_base, "gen.png"))
+        self.ico_save   = QIcon(os.path.join(path_base, "save.png"))
+        self.ico_sync   = QIcon(os.path.join(path_base, "sync.png"))
+        self.ico_laser  = QIcon(os.path.join(path_base, "dxf.png"))
+        self.ico_fix    = QIcon(os.path.join(path_base, "fix.png"))
+        
         dados.garantir_csv(self.caminho_db_atual)
         self.setup_ui()
+        
+        try:
+            # Pega o ID da janela (handle)
+            hwnd = int(self.winId())
+            # Constante do Windows para "Immersive Dark Mode"
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20 
+            # Chama a API do Windows para forçar a barra escura
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 
+                DWMWA_USE_IMMERSIVE_DARK_MODE, 
+                ctypes.byref(ctypes.c_int(2)), 
+                4
+            )
+        except Exception as e:
+            print(f"Não foi possível aplicar tema escuro na barra: {e}")
         
         if self.cfg.get("usar_servidor"):
             QTimer.singleShot(100, self.conectar_rede)
         else:
             self.atualizar_lista()
+
+    def closeEvent(self, event):
+        """Salva a geometria e estado da janela antes de fechar."""
+        try:
+            # Salva se está maximizada
+            self.cfg["janela_max"] = self.isMaximized()
+            
+            # Se NÃO estiver maximizada, salva o tamanho e posição exatos.
+            # (Se estiver maximizada, não salvamos o tamanho gigante, para que ao
+            # restaurar ela volte ao tamanho normal anterior).
+            if not self.isMaximized():
+                geo = self.geometry()
+                self.cfg["janela_geo"] = [geo.x(), geo.y(), geo.width(), geo.height()]
+            
+            config.salvar(self.cfg)
+        except Exception as e:
+            print(f"Erro ao salvar config de janela: {e}")
+        
+        event.accept()
 
     def setup_ui(self):
         central = QWidget()
@@ -180,8 +331,10 @@ class MainWindow(QMainWindow):
         self.lbl_rede.setStyleSheet("color: #DDD; font-weight: bold; border: none;")
         layout_esq.addWidget(self.lbl_rede)
 
-        self.btn_sync = QPushButton("☁ Sincronizar")
+        self.btn_sync = QPushButton(" Sincronizar")
         self.btn_sync.setObjectName("BtnSync")
+        self.btn_sync.setIcon(self.ico_sync)
+        self.btn_sync.setIconSize(QSize(16, 16))
         self.btn_sync.setEnabled(False)
         self.btn_sync.clicked.connect(self.acao_sincronizar)
         layout_esq.addWidget(self.btn_sync)
@@ -215,13 +368,17 @@ class MainWindow(QMainWindow):
         ly_gen.addWidget(self.in_codigo_gerado)
         
         # Botões Maiores
-        btn_gerar = QPushButton("GERAR CÓDIGO"); btn_gerar.setObjectName("BtnGerar")
+        btn_gerar = QPushButton(" GERAR CÓDIGO"); btn_gerar.setObjectName("BtnGerar")
         btn_gerar.setCursor(Qt.PointingHandCursor)
+        btn_gerar.setIcon(self.ico_gerar)
+        btn_gerar.setIconSize(QSize(20, 20))
         btn_gerar.clicked.connect(self.acao_gerar_codigo)
         ly_gen.addWidget(btn_gerar)
         
-        btn_salvar_esq = QPushButton("2. SALVAR PEÇA NOVA"); btn_salvar_esq.setObjectName("BtnSalvarEsq")
+        btn_salvar_esq = QPushButton(" SALVAR"); btn_salvar_esq.setObjectName("BtnSalvarEsq")
         btn_salvar_esq.setCursor(Qt.PointingHandCursor)
+        btn_salvar_esq.setIcon(self.ico_save)
+        btn_salvar_esq.setIconSize(QSize(20, 20))
         btn_salvar_esq.clicked.connect(lambda: self.acao_salvar(origem="gerado"))
         ly_gen.addWidget(btn_salvar_esq)
         layout_esq.addWidget(gb_gen)
@@ -233,8 +390,19 @@ class MainWindow(QMainWindow):
         layout_esq.addWidget(self.lbl_img)
         
         layout_esq.addStretch()
-        btn_cfg = QPushButton("Configurações"); btn_cfg.clicked.connect(self.janela_servidor)
-        layout_esq.addWidget(btn_cfg)
+        row_cfg = QHBoxLayout()
+        btn_cfg = QPushButton()
+        btn_cfg.setObjectName("BtnConfig")     # Usa o estilo CSS novo
+        btn_cfg.setIcon(self.ico_config)       # Define o ícone
+        btn_cfg.setIconSize(QSize(20, 20))     # Tamanho do ícone
+        btn_cfg.setToolTip("Configurações do Servidor")
+        btn_cfg.setCursor(Qt.PointingHandCursor)
+        btn_cfg.clicked.connect(self.janela_servidor)
+        
+        row_cfg.addWidget(btn_cfg)
+        row_cfg.addStretch() # Empurra o botão para a esquerda
+        layout_esq.addLayout(row_cfg)
+
         main_layout.addWidget(frame_esq)
 
         # ==========================================
@@ -246,7 +414,7 @@ class MainWindow(QMainWindow):
         
         # Barra Superior
         top_bar = QHBoxLayout()
-        self.in_busca = QLineEdit(); self.in_busca.setPlaceholderText("🔍 Buscar código...")
+        self.in_busca = QLineEdit(); self.in_busca.setPlaceholderText("🔍 Buscar código..."); self.in_busca.setStyleSheet("font-weight: bold;")
         self.in_busca.textChanged.connect(self.atualizar_lista)
         
         # CHECKBOXES (Carregando estado do config)
@@ -279,24 +447,24 @@ class MainWindow(QMainWindow):
         
         # Coluna Botões Direita
         fr_botoes = QFrame()
-        fr_botoes.setFixedWidth(145)
+        fr_botoes.setFixedWidth(160)
         ly_botoes = QVBoxLayout(fr_botoes)
         ly_botoes.setContentsMargins(5, 0, 0, 0)
         ly_botoes.setAlignment(Qt.AlignTop)
         
-        ly_botoes.addWidget(QLabel("ARQUIVO"))
+        ly_botoes.addWidget(QLabel("<b>ARQUIVO</b>"))
         # Botões de Ação
-        b_abrir = QPushButton("Abrir Inventor"); b_abrir.setProperty("class", "BtnAcao"); b_abrir.clicked.connect(self.acao_abrir_inventor)
-        b_pasta = QPushButton("Abrir Pasta"); b_pasta.setProperty("class", "BtnAcao"); b_pasta.clicked.connect(self.acao_abrir_local)
+        b_abrir = QPushButton(" Abrir Inventor"); b_abrir.setProperty("class", "BtnAcao"); b_abrir.setIcon(self.ico_abrir); b_abrir.clicked.connect(self.acao_abrir_inventor)
+        b_pasta = QPushButton(" Abrir Pasta"); b_pasta.setProperty("class", "BtnAcao"); b_pasta.setIcon(self.ico_pasta); b_pasta.clicked.connect(self.acao_abrir_local)
         ly_botoes.addWidget(b_abrir); ly_botoes.addWidget(b_pasta)
         
-        ly_botoes.addSpacing(15); ly_botoes.addWidget(QLabel("MONTAGEM"))
-        b_ins = QPushButton("Inserir (+)"); b_ins.setProperty("class", "BtnAcao"); b_ins.clicked.connect(self.acao_inserir_montagem)
+        ly_botoes.addSpacing(15); ly_botoes.addWidget(QLabel("<b>MONTAGEM</b>"))
+        b_ins = QPushButton(" Inserir +"); b_ins.setProperty("class", "BtnAcao"); b_ins.setIcon(self.ico_ins); b_ins.clicked.connect(self.acao_inserir_montagem)
         ly_botoes.addWidget(b_ins)
         
-        ly_botoes.addSpacing(15); ly_botoes.addWidget(QLabel("DADOS"))
-        b_edit = QPushButton("Editar"); b_edit.setProperty("class", "BtnAcao"); b_edit.clicked.connect(self.acao_editar)
-        b_del = QPushButton("Excluir"); b_del.setProperty("class", "BtnAcao"); b_del.clicked.connect(self.acao_excluir)
+        ly_botoes.addSpacing(15); ly_botoes.addWidget(QLabel("<b>DADOS</b>"))
+        b_edit = QPushButton(" Editar"); b_edit.setProperty("class", "BtnAcao"); b_edit.setIcon(self.ico_edit); b_edit.clicked.connect(self.acao_editar)
+        b_del = QPushButton(" Excluir"); b_del.setProperty("class", "BtnAcao"); b_del.setIcon(self.ico_del); b_del.clicked.connect(self.acao_excluir)
         ly_botoes.addWidget(b_edit); ly_botoes.addWidget(b_del)
         
         area_meio.addWidget(fr_botoes)
@@ -304,15 +472,25 @@ class MainWindow(QMainWindow):
         
         # Rodapé
         action_bar = QHBoxLayout()
-        action_bar.addWidget(QLabel("Automação: "))
-        b_laser = QPushButton("Exportar Laser"); b_laser.clicked.connect(self.acao_exportar_laser)
-        b_fix = QPushButton("Lista Fixadores"); b_fix.clicked.connect(self.acao_lista_fixadores)
-        action_bar.addWidget(b_laser); action_bar.addWidget(b_fix); action_bar.addStretch()
+        action_bar.addWidget(QLabel("<b>Automação: </b>"))
+        
+        b_laser = QPushButton(" Exportar DXF");
+        b_laser.setIcon(self.ico_laser)
+        b_laser.setIconSize(QSize(18, 18))
+        b_laser.clicked.connect(self.acao_exportar_laser)        
+        
+        b_fix = QPushButton(" Lista Fixadores");
+        b_fix.setIcon(self.ico_fix)
+        b_fix.setIconSize(QSize(18, 18))
+        b_fix.clicked.connect(self.acao_lista_fixadores)
+        
+        action_bar.addWidget(b_laser);
+        action_bar.addWidget(b_fix);
+        action_bar.addStretch()
+        
         layout_dir.addLayout(action_bar)
         
         main_layout.addWidget(frame_dir)
-
-    # === LÓGICA DO FOCO (CORRIGIDA) ===
     
     def focar_inventor(self, app):
         """Traz a janela do Inventor para frente sem bugar o estado."""
@@ -497,11 +675,11 @@ class MainWindow(QMainWindow):
 
     def acao_sincronizar(self):
         if not self.caminho_rede_ativo: return
-        if QMessageBox.question(self, "Sync", "Mover arquivos?") != QMessageBox.Yes: return
+        if QMessageBox.question(self, "Sync", "Mover arquivos para servidor?") != QMessageBox.Yes: return
         self.btn_sync.setText("..."); self.btn_sync.setEnabled(False); QApplication.processEvents()
         res = dados.sincronizar_arquivos(config.ARQUIVO_CSV_LOCAL, self.caminho_rede_ativo)
         QMessageBox.information(self, "Info", res)
-        self.btn_sync.setText("☁ Sincronizar"); self.btn_sync.setEnabled(True); self.atualizar_lista()
+        self.btn_sync.setText(" Sincronizar"); self.btn_sync.setEnabled(True); self.atualizar_lista()
 
     def acao_exportar_laser(self):
         app = inventor.obter_app()
@@ -550,3 +728,17 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             self.cfg.update({"ip": i_ip.text(), "path": i_path.text(), "user": i_user.text(), "pass": i_pass.text(), "usar_servidor": chk.isChecked()})
             config.salvar(self.cfg); QMessageBox.information(self, "Info", "Reinicie.")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    
+    # Aplica configurações de High DPI também via Qt (garantia extra)
+    app.setAttribute(Qt.AA_EnableHighDpiScaling)
+    app.setAttribute(Qt.AA_UseHighDpiPixmaps)
+    
+    window = MainWindow()
+    # A janela é exibida dentro do __init__ com base nas preferências salvas
+    if not window.isVisible():
+        window.show()
+        
+    sys.exit(app.exec())
