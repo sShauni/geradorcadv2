@@ -1,317 +1,378 @@
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+import sys
 import os
-import threading
 import subprocess
+import ctypes 
 from datetime import datetime
-from PIL import Image, ImageTk
 
+# --- Importações Qt (PySide6) ---
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                               QHBoxLayout, QLabel, QLineEdit, QPushButton, 
+                               QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
+                               QComboBox, QCheckBox, QMessageBox, QFileDialog, 
+                               QMenu, QGroupBox, QDialog, QFormLayout)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QPixmap, QImage, QIcon
+
+# --- Importações do Projeto ---
+from PIL import Image
 import config
 import dados
 import inventor
 import scripts_vb 
 
-class AppGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Invenio (1.2)")
-        self.root.geometry("1200x850") # Um pouco mais largo para acomodar a coluna
+# === ESTILO VISUAL LIMPO & CORRIGIDO ===
+QSS_INVENTOR = """
+/* === RESET GLOBAL === */
+QMainWindow { background-color: #2E3440; }
+QWidget { 
+    color: #E0E0E0; 
+    font-family: 'Segoe UI', Arial; 
+    font-size: 12px; 
+    border: none; 
+}
+
+/* === FRAMES E GRUPOS === */
+QFrame { border: none; background: transparent; }
+QFrame#FrameEsquerdo {
+    background-color: #2E3440;
+    border-right: 1px solid #3B4252;
+}
+
+QGroupBox { 
+    border: none; 
+    margin-top: 20px; 
+    font-weight: bold;
+}
+QGroupBox::title { 
+    subcontrol-origin: margin; left: 0px; padding: 0 3px; color: #88C0D0; 
+}
+
+/* === INPUTS E COMBOS === */
+QLineEdit, QComboBox {
+    background-color: #3B4252; 
+    border: 1px solid #4C566A; 
+    border-radius: 2px;
+    padding: 4px; 
+    color: white; 
+}
+QLineEdit:focus, QComboBox:focus { 
+    border: 1px solid #00AFFF; 
+}
+QLineEdit:read-only { 
+    background-color: #292E39; color: #88C0D0; font-weight: bold; border: 1px solid #3B4252;
+}
+
+/* --- CORREÇÃO DO MENU SUSPENSO (BUG VISUAL) --- */
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+/* A lista interna que abre ao clicar */
+QComboBox QAbstractItemView {
+    background-color: #3B4252; /* Fundo Sólido Escuro */
+    color: white;
+    border: 1px solid #4C566A;
+    selection-background-color: #454F61;
+    outline: none;
+}
+
+/* === TABELA === */
+QTableWidget {
+    background-color: #454F61; 
+    border: 1px solid #3B4252; 
+    outline: none;
+}
+    QTableWidget::item {
+    border-bottom: 1px solid #525E70; /* Cor da linha */
+    padding-left: 5px;
+}
+QHeaderView::section {
+    background-color: #2E3440; color: white; padding: 6px;
+    border: none; border-bottom: 2px solid #333B49; font-weight: bold;
+}
+QTableWidget::item:selected {
+    background-color: rgba(67 , 92, 116, 100); 
+    border: 1px solid #3D84AA; 
+    color: white;
+}
+QTableWidget::item:hover { background-color: #323846; }
+
+/* === BOTÕES === */
+QPushButton {
+    background-color: #2E3440; 
+    border: 1px solid #758497; border-style: solid; 
+    padding: 4px 15px; border-radius: 2px; color: white;
+    min-height: 24px; max-height: 28px;
+}
+QPushButton:hover {
+    background-color: #2E3440;
+    border: 1px solid white;
+}
+
+QPushButton.BtnAcao { text-align: left; padding-left: 10px; }
+
+/* Destaques Esquerda */
+QPushButton#BtnGerar {
+    background-color: #2E3440; border: 1px solid #758497; border-style: solid;
+    min-height: 32px; max-height: 32px; font-weight: bold; font-size: 13px;
+}
+QPushButton#BtnGerar:hover { background-color: #2E3440; border: 1px solid white; }
+
+QPushButton#BtnSalvarEsq {
+    background-color: #2E3440; border: 1px solid #758497; border: 1px solid #758497; border-style: solid;
+    color: #FFFFFF; min-height: 32px; max-height: 32px; font-weight: bold; font-size: 13px;
+}
+QPushButton#BtnSalvarEsq:hover { background-color: #2E3440; border: 1px solid white; }
+
+QPushButton#BtnSync {
+    background-color: #2E3440; border: 1px solid #758497; border-style: solid;
+    font-size: 11px; color: white; border: 1px solid #4C566A;
+}
+
+QPushButton#BtnSync:hover { background-color: #2E3440; border: 1px solid white; }
+
+QScrollBar:vertical { background: #454F61; width: 6px; }
+QScrollBar::handle:vertical { background: #5D697E; min-height: 15px; border-radius: 3px; }
+"""
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Invenio 2.0")
+        self.resize(1366, 768)
+        self.setStyleSheet(QSS_INVENTOR)
         
         self.cfg = config.carregar()
         self.caminho_db_atual = config.ARQUIVO_CSV_LOCAL
         self.caminho_rede_ativo = None
         
-        self.var_mostrar_inativos = tk.BooleanVar(value=False)
-        estado_salvo = self.cfg.get("ocultar_desenhos", False)
-        self.var_ocultar_desenhos = tk.BooleanVar(value=estado_salvo)
+        path_base = os.path.dirname(os.path.abspath(__file__))
+        self.icon_ipt = QIcon(os.path.join(path_base, "ipt.ico"))
+        self.icon_iam = QIcon(os.path.join(path_base, "iam.ico"))
+        self.icon_idw = QIcon(os.path.join(path_base, "idw.ico"))
         
-        self.var_cod = tk.StringVar()
-
         dados.garantir_csv(self.caminho_db_atual)
-        
-        self.criar_layout()
+        self.setup_ui()
         
         if self.cfg.get("usar_servidor"):
-            threading.Thread(target=self.conectar_rede, daemon=True).start()
+            QTimer.singleShot(100, self.conectar_rede)
         else:
             self.atualizar_lista()
 
-    def criar_layout(self):
-        painel = tk.PanedWindow(self.root, orient=tk.HORIZONTAL)
-        painel.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # === ESQUERDA (DADOS & GERADOR) ===
-        frame_esq = tk.Frame(painel)
-        painel.add(frame_esq, minsize=400)
-        
-        # Menu Superior
-        menubar = tk.Menu(self.root); self.root.config(menu=menubar)
-        menu_opt = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Opções", menu=menu_opt)
-        menu_opt.add_command(label="Configurar Servidor...", command=self.janela_servidor)
+    def setup_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QHBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0); main_layout.setSpacing(0)
+
+        # ==========================================
+        # 1. PAINEL ESQUERDO
+        # ==========================================
+        frame_esq = QFrame()
+        frame_esq.setObjectName("FrameEsquerdo")
+        frame_esq.setFixedWidth(400)
+        layout_esq = QVBoxLayout(frame_esq)
+        layout_esq.setSpacing(10)
+        layout_esq.setContentsMargins(15, 15, 15, 15)
         
         # Status Rede
-        fr_status = tk.Frame(frame_esq, bg="#ddd", pady=5); fr_status.pack(fill="x", pady=2)
-        self.lbl_rede = tk.Label(fr_status, text="Modo: LOCAL", bg="#ddd", font=("Arial", 9, "bold")); self.lbl_rede.pack(side="left", padx=10)
-        self.btn_sync = tk.Button(fr_status, text="☁ SINCRONIZAR", bg="#4CAF50", fg="white", font=("Arial", 8, "bold"), state="disabled", command=self.acao_sincronizar); self.btn_sync.pack(side="right", padx=10)
-        
-        # Formulário
-        fr_dados = tk.LabelFrame(frame_esq, text="Dados do Projeto", padx=10, pady=10); fr_dados.pack(fill="x", pady=5)
-        tk.Label(fr_dados, text="Projeto:").grid(row=0, column=0, sticky="w")
-        self.ent_proj = tk.Entry(fr_dados, width=35); self.ent_proj.insert(0, self.cfg.get("ultimo_projeto", "")); self.ent_proj.grid(row=0, column=1, sticky="w", pady=2)
-        tk.Label(fr_dados, text="Título:").grid(row=1, column=0, sticky="w")
-        self.ent_tit = tk.Entry(fr_dados, width=35); self.ent_tit.grid(row=1, column=1, sticky="w", pady=2)
-        tk.Label(fr_dados, text="Descrição:").grid(row=2, column=0, sticky="w")
-        self.ent_desc = tk.Entry(fr_dados, width=35); self.ent_desc.grid(row=2, column=1, sticky="w", pady=2)
-        
-        # Gerador
-        fr_gen = tk.LabelFrame(frame_esq, text="Gerador", padx=10, pady=10); fr_gen.pack(fill="x", pady=5)
-        tk.Label(fr_gen, text="Prefixo:").grid(row=0, column=0)
-        self.ent_prefixo = tk.Entry(fr_gen, width=10); self.ent_prefixo.insert(0, self.cfg.get("ultimo_prefixo", "PRJ")); self.ent_prefixo.grid(row=0, column=1)
-        self.cb_tipo = ttk.Combobox(fr_gen, values=list(config.TIPOS_FABRICACAO.keys()), state="readonly", width=18); self.cb_tipo.current(0); self.cb_tipo.grid(row=0, column=2, padx=5)
-        tk.Entry(fr_gen, textvariable=self.var_cod, font=("Arial", 14, "bold"), justify="center", state="readonly", bg="#f0f0f0").grid(row=1, column=0, columnspan=3, pady=10, sticky="ew")
-        
-        tk.Button(fr_gen, text="1. GERAR CÓDIGO", bg="#2196F3", fg="white", font=("Arial", 9, "bold"), command=self.acao_gerar_codigo).grid(row=2, column=0, columnspan=3, sticky="ew")
-        tk.Button(fr_gen, text="2. SALVAR (CAD / IDW)", bg="#FF9800", fg="black", font=("Arial", 9, "bold"), command=self.acao_salvar).grid(row=3, column=0, columnspan=3, sticky="ew", pady=5)
+        self.lbl_rede = QLabel("MODO: LOCAL")
+        self.lbl_rede.setStyleSheet("color: #DDD; font-weight: bold; border: none;")
+        layout_esq.addWidget(self.lbl_rede)
 
-        # Imagem
-        self.lbl_img = tk.Label(frame_esq, text="Visualizador"); self.lbl_img.pack(fill="both", expand=True)
+        self.btn_sync = QPushButton("☁ Sincronizar")
+        self.btn_sync.setObjectName("BtnSync")
+        self.btn_sync.setEnabled(False)
+        self.btn_sync.clicked.connect(self.acao_sincronizar)
+        layout_esq.addWidget(self.btn_sync)
+        
+        # Grupo: Dados do Projeto
+        gb_proj = QGroupBox("DADOS DO PROJETO")
+        ly_proj = QFormLayout(gb_proj)
+        ly_proj.setSpacing(8)
+        self.in_projeto = QLineEdit(self.cfg.get("ultimo_projeto", ""))
+        self.in_titulo = QLineEdit()
+        self.in_desc = QLineEdit()
+        ly_proj.addRow("Projeto:", self.in_projeto)
+        ly_proj.addRow("Título:", self.in_titulo)
+        ly_proj.addRow("Descrição:", self.in_desc)
+        layout_esq.addWidget(gb_proj)
 
-        # === DIREITA (LISTA + COLUNA DE BOTÕES) ===
-        frame_dir = tk.Frame(painel)
-        painel.add(frame_dir, minsize=600)
+        # Grupo: Gerador
+        gb_gen = QGroupBox("GERADOR DE CÓDIGOS")
+        ly_gen = QVBoxLayout(gb_gen)
+        ly_gen.setSpacing(10)
+        row_p = QHBoxLayout()
+        self.in_prefixo = QLineEdit(self.cfg.get("ultimo_prefixo", "PRJ")); self.in_prefixo.setFixedWidth(80)
+        self.cb_tipo = QComboBox(); self.cb_tipo.addItems(list(config.TIPOS_FABRICACAO.keys()))
+        row_p.addWidget(QLabel("Prefixo:")); row_p.addWidget(self.in_prefixo); row_p.addWidget(self.cb_tipo)
+        ly_gen.addLayout(row_p)
         
-        # Filtros (Topo)
-        fr_top = tk.Frame(frame_dir); fr_top.pack(fill="x", pady=5)
-        tk.Label(fr_top, text="Buscar:").pack(side="left")
-        self.ent_busca = tk.Entry(fr_top); self.ent_busca.pack(side="left", fill="x", expand=True, padx=5); self.ent_busca.bind("<KeyRelease>", lambda e: self.atualizar_lista())
-        tk.Checkbutton(fr_top, text="Ocultar Desenhos", variable=self.var_ocultar_desenhos, command=self.ao_alternar_filtro).pack(side="left", padx=5)
-        tk.Checkbutton(fr_top, text="Lixeira", variable=self.var_mostrar_inativos, command=self.atualizar_lista).pack(side="left", padx=5)
+        self.in_codigo_gerado = QLineEdit(); self.in_codigo_gerado.setReadOnly(True)
+        self.in_codigo_gerado.setPlaceholderText("Código aparecerá aqui...")
+        self.in_codigo_gerado.setAlignment(Qt.AlignCenter)
+        self.in_codigo_gerado.setStyleSheet("font-size: 16px; padding: 8px; color: #88C0D0; font-weight: bold;")
+        ly_gen.addWidget(self.in_codigo_gerado)
         
-        # Container Principal (Divide Lista e Botões)
-        fr_main_list = tk.Frame(frame_dir)
-        fr_main_list.pack(fill="both", expand=True)
+        # Botões Maiores
+        btn_gerar = QPushButton("GERAR CÓDIGO"); btn_gerar.setObjectName("BtnGerar")
+        btn_gerar.setCursor(Qt.PointingHandCursor)
+        btn_gerar.clicked.connect(self.acao_gerar_codigo)
+        ly_gen.addWidget(btn_gerar)
+        
+        btn_salvar_esq = QPushButton("2. SALVAR PEÇA NOVA"); btn_salvar_esq.setObjectName("BtnSalvarEsq")
+        btn_salvar_esq.setCursor(Qt.PointingHandCursor)
+        btn_salvar_esq.clicked.connect(lambda: self.acao_salvar(origem="gerado"))
+        ly_gen.addWidget(btn_salvar_esq)
+        layout_esq.addWidget(gb_gen)
+        
+        # Imagem Preview
+        self.lbl_img = QLabel(""); self.lbl_img.setAlignment(Qt.AlignCenter)
+        self.lbl_img.setMinimumHeight(200)
+        self.lbl_img.setStyleSheet("background-color: #21252B; border: 1px solid #3B4252; border-radius: 2px; margin-top: 5px;")
+        layout_esq.addWidget(self.lbl_img)
+        
+        layout_esq.addStretch()
+        btn_cfg = QPushButton("Configurações"); btn_cfg.clicked.connect(self.janela_servidor)
+        layout_esq.addWidget(btn_cfg)
+        main_layout.addWidget(frame_esq)
 
-        # 1. COLUNA DE BOTÕES (LADO DIREITO)
-        fr_coluna_btn = tk.Frame(fr_main_list, padx=5)
-        fr_coluna_btn.pack(side="right", fill="y")
+        # ==========================================
+        # 2. PAINEL DIREITO
+        # ==========================================
+        frame_dir = QWidget()
+        layout_dir = QVBoxLayout(frame_dir)
+        layout_dir.setContentsMargins(15, 15, 15, 15)
+        
+        # Barra Superior
+        top_bar = QHBoxLayout()
+        self.in_busca = QLineEdit(); self.in_busca.setPlaceholderText("🔍 Buscar código...")
+        self.in_busca.textChanged.connect(self.atualizar_lista)
+        
+        # CHECKBOXES (Carregando estado do config)
+        self.chk_desenhos = QCheckBox("Ocultar Desenhos")
+        self.chk_desenhos.setChecked(self.cfg.get("ocultar_desenhos", False)) # Carrega config
+        self.chk_desenhos.toggled.connect(self.ao_alternar_filtro)
+        
+        self.chk_lixeira = QCheckBox("Lixeira")
+        self.chk_lixeira.setChecked(self.cfg.get("mostrar_inativos", False)) # Carrega config
+        self.chk_lixeira.toggled.connect(self.ao_alternar_filtro)
+        
+        top_bar.addWidget(QLabel("<b>ITENS</b>")); top_bar.addStretch()
+        top_bar.addWidget(self.in_busca); top_bar.addWidget(self.chk_desenhos); top_bar.addWidget(self.chk_lixeira)
+        layout_dir.addLayout(top_bar)
+        
+        # Tabela + Botões
+        area_meio = QHBoxLayout()
+        area_meio.setSpacing(10)
+        
+        self.table = QTableWidget(); self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(["CÓDIGO", "TIPO", "TÍTULO", "DESCRIÇÃO", "STATUS"])
+        self.table.verticalHeader().setVisible(False); self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers); self.table.setShowGrid(False)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table.itemSelectionChanged.connect(self.ao_selecionar)
+        self.table.doubleClicked.connect(self.acao_abrir_inventor)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.mostrar_menu_contexto)
+        area_meio.addWidget(self.table)
+        
+        # Coluna Botões Direita
+        fr_botoes = QFrame()
+        fr_botoes.setFixedWidth(145)
+        ly_botoes = QVBoxLayout(fr_botoes)
+        ly_botoes.setContentsMargins(5, 0, 0, 0)
+        ly_botoes.setAlignment(Qt.AlignTop)
+        
+        ly_botoes.addWidget(QLabel("ARQUIVO"))
+        # Botões de Ação
+        b_abrir = QPushButton("Abrir Inventor"); b_abrir.setProperty("class", "BtnAcao"); b_abrir.clicked.connect(self.acao_abrir_inventor)
+        b_pasta = QPushButton("Abrir Pasta"); b_pasta.setProperty("class", "BtnAcao"); b_pasta.clicked.connect(self.acao_abrir_local)
+        ly_botoes.addWidget(b_abrir); ly_botoes.addWidget(b_pasta)
+        
+        ly_botoes.addSpacing(15); ly_botoes.addWidget(QLabel("MONTAGEM"))
+        b_ins = QPushButton("Inserir (+)"); b_ins.setProperty("class", "BtnAcao"); b_ins.clicked.connect(self.acao_inserir_montagem)
+        ly_botoes.addWidget(b_ins)
+        
+        ly_botoes.addSpacing(15); ly_botoes.addWidget(QLabel("DADOS"))
+        b_edit = QPushButton("Editar"); b_edit.setProperty("class", "BtnAcao"); b_edit.clicked.connect(self.acao_editar)
+        b_del = QPushButton("Excluir"); b_del.setProperty("class", "BtnAcao"); b_del.clicked.connect(self.acao_excluir)
+        ly_botoes.addWidget(b_edit); ly_botoes.addWidget(b_del)
+        
+        area_meio.addWidget(fr_botoes)
+        layout_dir.addLayout(area_meio)
+        
+        # Rodapé
+        action_bar = QHBoxLayout()
+        action_bar.addWidget(QLabel("Automação: "))
+        b_laser = QPushButton("Exportar Laser"); b_laser.clicked.connect(self.acao_exportar_laser)
+        b_fix = QPushButton("Lista Fixadores"); b_fix.clicked.connect(self.acao_lista_fixadores)
+        action_bar.addWidget(b_laser); action_bar.addWidget(b_fix); action_bar.addStretch()
+        layout_dir.addLayout(action_bar)
+        
+        main_layout.addWidget(frame_dir)
 
-        # Grupo: Acesso
-        tk.Label(fr_coluna_btn, text="--- Acesso ---", fg="gray").pack(pady=(0,2))
-        tk.Button(fr_coluna_btn, text="Abrir no Inventor", bg="#e3f2fd", command=self.acao_abrir_inventor).pack(fill="x", pady=2)
-        tk.Button(fr_coluna_btn, text="Abrir Pasta", command=self.acao_abrir_local).pack(fill="x", pady=2)
-        
-        # Grupo: Montagem
-        tk.Label(fr_coluna_btn, text="--- Montagem ---", fg="gray").pack(pady=(10,2))
-        tk.Button(fr_coluna_btn, text="Inserir (+)", bg="#4CAF50", fg="white", font=("Arial", 9, "bold"), command=self.acao_inserir_montagem).pack(fill="x", pady=2)
-        
-        # Grupo: Dados
-        tk.Label(fr_coluna_btn, text="--- Dados ---", fg="gray").pack(pady=(10,2))
-        tk.Button(fr_coluna_btn, text="Editar Dados", bg="#FFF9C4", command=self.acao_editar).pack(fill="x", pady=2)
-        tk.Button(fr_coluna_btn, text="Excluir", fg="red", command=self.acao_excluir).pack(fill="x", pady=2)
-        
-        # Grupo: Automação
-        tk.Label(fr_coluna_btn, text="--- Automação ---", fg="gray").pack(pady=(10,2))
-        tk.Button(fr_coluna_btn, text="Exportar Laser", bg="#E0F7FA", command=self.acao_exportar_laser).pack(fill="x", pady=2)
-        tk.Button(fr_coluna_btn, text="Lista Fixadores", bg="#E0F7FA", command=self.acao_lista_fixadores).pack(fill="x", pady=2)
-
-        # 2. TREEVIEW (LADO ESQUERDO - Ocupa o resto)
-        cols = ("Codigo", "Tipo", "Titulo", "Descricao", "Status")
-        self.tree = ttk.Treeview(fr_main_list, columns=cols, show="headings")
-        
-        # Configuração das Colunas
-        self.tree.heading("Codigo", text="Código"); self.tree.column("Codigo", width=90)
-        self.tree.heading("Tipo", text="Tipo"); self.tree.column("Tipo", width=90)
-        self.tree.heading("Titulo", text="Título"); self.tree.column("Titulo", width=180)
-        self.tree.heading("Descricao", text="Descrição"); self.tree.column("Descricao", width=180)
-        self.tree.heading("Status", text="St"); self.tree.column("Status", width=40)
-        
-        self.tree.tag_configure("INATIVO", foreground="gray")
-        self.tree.tag_configure("DESENHO", foreground="blue")
-        self.tree.tag_configure("MODIFICADO", foreground="#00aaaa", font=("Arial", 9, "bold"))
-        
-        scroll = ttk.Scrollbar(fr_main_list, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscroll=scroll.set)
-        
-        scroll.pack(side="right", fill="y")
-        self.tree.pack(side="left", fill="both", expand=True)
-        
-        self.tree.bind("<<TreeviewSelect>>", self.ao_selecionar)
-        self.tree.bind("<Double-1>", lambda e: self.acao_abrir_inventor())
-
-    # --- LÓGICA (Mantida idêntica à V29) ---
-
-    def ao_alternar_filtro(self):
-        self.cfg["ocultar_desenhos"] = self.var_ocultar_desenhos.get()
-        config.salvar(self.cfg)
-        self.atualizar_lista()
+    # === LÓGICA DO FOCO (CORRIGIDA) ===
     
-    def acao_sincronizar(self):
-        if not self.caminho_rede_ativo: return
-        if not messagebox.askyesno("Sincronizar", "Mover arquivos locais para a rede?"): return
-        self.btn_sync.config(text="AGUARDE...", state="disabled"); self.root.update()
-        res = dados.sincronizar_arquivos(config.ARQUIVO_CSV_LOCAL, self.caminho_rede_ativo)
-        messagebox.showinfo("Relatório", res)
-        self.btn_sync.config(text="☁ SINCRONIZAR", state="normal"); self.atualizar_lista()
-
-    def acao_editar(self):
-        sel = self.tree.selection()
-        if not sel: return
-        item = self.tree.item(sel[0]); cod = item['values'][0]; caminho = item['tags'][1]
-        
-        top = tk.Toplevel(self.root); top.title(f"Editar: {cod}"); top.geometry("400x250")
-        tk.Label(top, text="Novo Título:").pack(anchor="w", padx=10)
-        ent_t = tk.Entry(top, width=50); ent_t.pack(padx=10); ent_t.insert(0, item['values'][2])
-        tk.Label(top, text="Novo Projeto:").pack(anchor="w", padx=10)
-        ent_p = tk.Entry(top, width=50); ent_p.pack(padx=10); ent_p.insert(0, self.ent_proj.get()) 
-        tk.Label(top, text="Nova Descrição:").pack(anchor="w", padx=10)
-        ent_d = tk.Entry(top, width=50); ent_d.pack(padx=10); ent_d.insert(0, item['values'][3])
-        
-        def salvar_edicao():
-            novos = {'titulo': ent_t.get(), 'projeto': ent_p.get(), 'descricao': ent_d.get()}
-            app = inventor.obter_app()
-            sucesso_inv = False
-            if app and os.path.exists(caminho):
-                sucesso_inv = inventor.atualizar_propriedades(app, caminho, novos)
-                pasta = os.path.dirname(caminho)
-                nome = os.path.splitext(os.path.basename(caminho))[0]
-                path_dwg = os.path.join(pasta, "desenhos", "ED", f"{nome}-DT.idw")
-                if os.path.exists(path_dwg):
-                    inventor.atualizar_propriedades(app, path_dwg, novos)
-                else:
-                    if "3d" in pasta.lower():
-                        path_dwg_alt = os.path.join(os.path.dirname(pasta), "desenhos", "ED", f"{nome}-DT.idw")
-                        if os.path.exists(path_dwg_alt):
-                            inventor.atualizar_propriedades(app, path_dwg_alt, novos)
-
-            if not sucesso_inv and app: messagebox.showwarning("Aviso", "Arquivo bloqueado. Atualizando apenas CSV.")
-            dados.editar_registro(self.caminho_db_atual, cod, novos)
-            self.atualizar_lista(); top.destroy()
-        tk.Button(top, text="Salvar Alterações", bg="#4CAF50", fg="white", command=salvar_edicao).pack(pady=15)
-
-    def acao_exportar_laser(self):
-        app = inventor.obter_app()
-        if not app: return messagebox.showerror("Erro", "Inventor fechado.")
-        if app.ActiveDocument and app.ActiveDocument.DocumentType == 12291:
-            if messagebox.askyesno("Confirmar", "Gerar DXFs e Lista de Corte?"):
-                try: inventor.executar_ilogic(app, scripts_vb.SCRIPT_EXPORTAR_LASER)
-                except Exception as e: messagebox.showerror("Erro", str(e))
-        else: messagebox.showwarning("Aviso", "Abra uma Montagem (.iam).")
-
-    def acao_lista_fixadores(self):
-        app = inventor.obter_app()
-        if not app: return messagebox.showerror("Erro", "Inventor fechado.")
-        if app.ActiveDocument and app.ActiveDocument.DocumentType == 12291:
-            if messagebox.askyesno("Confirmar", "Gerar Lista de Fixadores?"):
-                try: inventor.executar_ilogic(app, scripts_vb.SCRIPT_LISTA_FIXADORES)
-                except Exception as e: messagebox.showerror("Erro", str(e))
-        else: messagebox.showwarning("Aviso", "Abra uma Montagem (.iam).")
-
-    def acao_gerar_codigo(self):
-        prefixo = self.ent_prefixo.get().upper(); sufixo = config.TIPOS_FABRICACAO[self.cb_tipo.get()]
-        if not prefixo: return
-        cod = dados.gerar_codigo_unico(self.caminho_db_atual, prefixo, sufixo)
-        if cod: self.var_cod.set(cod); self.root.clipboard_clear(); self.root.clipboard_append(cod)
-
-    def acao_salvar(self):
-        destino = self.caminho_rede_ativo if self.caminho_rede_ativo else filedialog.askdirectory()
-        if not destino: return
-        app = inventor.obter_app()
-        if not app: return messagebox.showerror("Erro", "Inventor não encontrado.")
-        doc = app.ActiveDocument
-        if not doc: return messagebox.showwarning("Aviso", "Nenhum documento aberto.")
-
+    def focar_inventor(self, app):
+        """Traz a janela do Inventor para frente sem bugar o estado."""
         try:
-            if doc.DocumentType == 12292: # IDW
-                nome_base = "Desenho"
-                try: 
-                    if doc.ReferencedDocuments.Count > 0:
-                        ref = doc.ReferencedDocuments.Item(1)
-                        nome_base = os.path.splitext(os.path.basename(ref.FullFileName))[0]
-                except: pass
-                
-                pasta = os.path.join(destino, "desenhos", "ED")
-                os.makedirs(pasta, exist_ok=True)
-                caminho_final = os.path.join(pasta, f"{nome_base}-DT.idw")
-                
-                inventor.salvar_idw(doc, caminho_final)
-                self.registrar_db(nome_base, "DESENHO TÉCNICO", caminho_final, f"[DESENHO] {self.ent_tit.get()}")
-                messagebox.showinfo("Sucesso", "Desenho Salvo!")
-                
-            else: # PEÇA/ASM
-                cod = self.var_cod.get()
-                if not cod: return messagebox.showwarning("Aviso", "Gere um código!")
-                ext = ".ipt" if doc.DocumentType != 12291 else ".iam"
-                
-                pasta_3d = os.path.join(destino, "3d")
-                os.makedirs(pasta_3d, exist_ok=True)
-                caminho_final = os.path.join(pasta_3d, cod + ext)
-                
-                inventor.salvar_peca(doc, caminho_final, self.ent_tit.get(), self.ent_proj.get(), self.ent_desc.get(), cod)
-                inventor.capturar_print(app, destino, cod) 
-                
-                self.registrar_db(cod, self.cb_tipo.get(), caminho_final, self.ent_tit.get())
-                messagebox.showinfo("Sucesso", "Peça Salva!")
-        except Exception as e: messagebox.showerror("Erro", f"Falha ao salvar:\n{e}")
-
-    def acao_inserir_montagem(self):
-        sel = self.tree.selection()
-        if not sel: return messagebox.showwarning("Aviso", "Selecione uma peça na lista.")
-        caminho = self.tree.item(sel[0])['tags'][1]
-        
-        if not caminho or not os.path.exists(caminho):
-            return messagebox.showerror("Erro", "Arquivo não encontrado.")
+            if not app: return
+            hwnd = app.MainFrameHWND
             
-        app = inventor.obter_app()
-        if not app: return messagebox.showerror("Erro", "Inventor fechado.")
-        
-        try:
-            inventor.inserir_componente_montagem(app, caminho)
+            # Verifica se está minimizado (IsIconic)
+            if ctypes.windll.user32.IsIconic(hwnd):
+                # Se estiver minimizado, restaura (SW_RESTORE = 9)
+                ctypes.windll.user32.ShowWindow(hwnd, 9)
+            else:
+                # Se já estiver normal ou maximizado, NÃO chame ShowWindow.
+                # Apenas traga para frente.
+                pass
+            
+            # Traz para frente e define foco
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+            
         except Exception as e:
-            messagebox.showerror("Erro", str(e))
+            print(f"Erro ao focar Inventor: {e}")
 
-    def acao_abrir_inventor(self):
-        sel = self.tree.selection()
-        if not sel: return
-        caminho = self.tree.item(sel[0])['tags'][1]
-        if not caminho or not os.path.exists(caminho): return messagebox.showerror("Erro", "Arquivo não encontrado.")
-        app = inventor.obter_app()
-        if not app: return messagebox.showerror("Erro", "Inventor fechado.")
-        try: inventor.abrir_arquivo(app, caminho)
-        except Exception as e: messagebox.showerror("Erro", str(e))
-
-    def acao_abrir_local(self):
-        sel = self.tree.selection()
-        if not sel: return
-        caminho = self.tree.item(sel[0])['tags'][1]
-        if not caminho or not os.path.exists(caminho): return messagebox.showerror("Erro", "Arquivo não encontrado.")
-        try: subprocess.run(f'explorer /select,"{caminho}"')
-        except Exception as e: messagebox.showerror("Erro", str(e))
-
-    def registrar_db(self, cod, tipo, caminho, titulo):
-        linha = [datetime.now().strftime("%Y-%m-%d %H:%M"), cod, self.ent_prefixo.get(), "", tipo, self.ent_proj.get(), titulo, self.ent_desc.get(), "ATIVO", caminho]
-        dados.gravar_linha(self.caminho_db_atual, linha)
-        self.cfg["ultimo_prefixo"] = self.ent_prefixo.get(); self.cfg["ultimo_projeto"] = self.ent_proj.get()
-        config.salvar(self.cfg)
-        self.atualizar_lista()
+    # =================================
 
     def atualizar_lista(self):
-        for i in self.tree.get_children(): self.tree.delete(i)
-        registros = dados.ler_registros(self.caminho_db_atual, self.var_mostrar_inativos.get(), self.ent_busca.get(), self.var_ocultar_desenhos.get())
-        for row in registros:
-            tag = "ATIVO"
-            status = row[8]
-            if status == "INATIVO": tag = "INATIVO"
-            elif status == "MODIFICADO": tag = "MODIFICADO"
-            elif "DESENHO" in row[4].upper(): tag = "DESENHO"
+        self.table.setRowCount(0)
+        regs = dados.ler_registros(self.caminho_db_atual, self.chk_lixeira.isChecked(), self.in_busca.text(), self.chk_desenhos.isChecked())
+        self.table.setRowCount(len(regs))
+        for i, row in enumerate(regs):
+            # row[9] é o caminho completo do arquivo
+            caminho_arquivo = row[9].lower() if len(row) > 9 else ""
+            icone_atual = self.icon_ipt # Padrão (Peça)
             
-            self.tree.insert("", "end", values=(row[1], row[4], row[6], row[7], row[8]), tags=(tag, row[9]))
+            if caminho_arquivo.endswith(".idw"):
+                icone_atual = self.icon_idw
+            elif caminho_arquivo.endswith(".iam"):
+                icone_atual = self.icon_iam
 
-    def ao_selecionar(self, e):
-        self.lbl_img.config(image="", text=""); self.lbl_img.img = None
-        sel = self.tree.selection()
-        if not sel: return
-        caminho = self.tree.item(sel[0])['tags'][1]; cod = self.tree.item(sel[0])['values'][0]
+            # Cria o item da primeira coluna (CÓDIGO) e define o ícone
+            item_cod = QTableWidgetItem(row[1])
+            item_cod.setIcon(icone_atual) # <--- Aplica o ícone aqui
+            item_cod.setData(Qt.UserRole, row[9])
+            
+            c = QColor("white")
+            if row[8] == "INATIVO": c = QColor("gray")
+            elif row[8] == "MODIFICADO": c = QColor("#88C0D0"); item_cod.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            elif "DESENHO" in row[4].upper(): c = QColor("#81A1C1")
+            
+            self.table.setItem(i, 0, item_cod)
+            self.table.setItem(i, 1, QTableWidgetItem(row[4]))
+            self.table.setItem(i, 2, QTableWidgetItem(row[6]))
+            self.table.setItem(i, 3, QTableWidgetItem(row[7]))
+            self.table.setItem(i, 4, QTableWidgetItem(row[8]))
+            for k in range(5): self.table.item(i, k).setForeground(c)
+
+    def ao_selecionar(self):
+        sel = self.table.selectedItems()
+        if not sel: self.lbl_img.clear(); return
+        caminho = self.table.item(sel[0].row(), 0).data(Qt.UserRole)
+        cod = self.table.item(sel[0].row(), 0).text()
         if caminho and os.path.exists(os.path.dirname(caminho)):
             pasta = os.path.dirname(caminho)
             if os.path.basename(pasta).lower() == "3d": pasta = os.path.dirname(pasta)
@@ -319,45 +380,173 @@ class AppGUI:
             img_path = os.path.join(pasta, "_IMAGENS", f"{cod}.jpg")
             if os.path.exists(img_path):
                 try:
-                    img = Image.open(img_path); img.thumbnail((350, 350))
-                    tk_img = ImageTk.PhotoImage(img); self.lbl_img.config(image=tk_img); self.lbl_img.img = tk_img
+                    pil_img = Image.open(img_path); pil_img.thumbnail((380, 250))
+                    if pil_img.mode == "RGB": r, g, b = pil_img.split(); pil_img = Image.merge("RGB", (b, g, r))
+                    im2 = pil_img.convert("RGBA"); data = im2.tobytes("raw", "BGRA")
+                    qim = QImage(data, im2.size[0], im2.size[1], QImage.Format_ARGB32)
+                    self.lbl_img.setPixmap(QPixmap.fromImage(qim))
+                except: self.lbl_img.setText("Erro Imagem")
+            else: self.lbl_img.setText("Sem Imagem")
+        else: self.lbl_img.setText("Caminho não encontrado")
+
+    def get_selecionado(self):
+        sel = self.table.selectedItems()
+        if not sel: return None
+        row = sel[0].row()
+        return self.table.item(row, 0).text(), self.table.item(row, 0).data(Qt.UserRole)
+
+    def acao_gerar_codigo(self):
+        p = self.in_prefixo.text().upper(); s = config.TIPOS_FABRICACAO[self.cb_tipo.currentText()]
+        if not p: return
+        cod = dados.gerar_codigo_unico(self.caminho_db_atual, p, s)
+        if cod: self.in_codigo_gerado.setText(cod); QApplication.clipboard().setText(cod)
+
+    def acao_salvar(self, origem="gerado"):
+        destino = self.caminho_rede_ativo if self.caminho_rede_ativo else QFileDialog.getExistingDirectory(self, "Salvar em")
+        if not destino: return
+        app = inventor.obter_app()
+        if not app: return QMessageBox.critical(self, "Erro", "Inventor fechado.")
+        doc = app.ActiveDocument
+        if not doc: return QMessageBox.warning(self, "Aviso", "Nenhum documento aberto.")
+
+        cod_final = ""
+        if origem == "gerado":
+            cod_final = self.in_codigo_gerado.text()
+            if not cod_final: return QMessageBox.warning(self, "Aviso", "Gere um código!")
+        else:
+            sel = self.get_selecionado()
+            if not sel: return QMessageBox.warning(self, "Aviso", "Selecione um item.")
+            cod_final = sel[0]
+            if QMessageBox.question(self, "Confirmar", f"Salvar como {cod_final}?") != QMessageBox.Yes: return
+
+        try:
+            if doc.DocumentType == 12292: # IDW
+                nome_base = "Desenho"
+                try: 
+                    if doc.ReferencedDocuments.Count > 0: 
+                        nome_base = os.path.splitext(os.path.basename(doc.ReferencedDocuments.Item(1).FullFileName))[0]
                 except: pass
-            else: self.lbl_img.config(text="Sem Imagem")
+                caminho_final = os.path.join(destino, "desenhos", "ED", f"{nome_base}-DT.idw")
+                os.makedirs(os.path.dirname(caminho_final), exist_ok=True)
+                inventor.salvar_idw(doc, caminho_final)
+                self.registrar_db(nome_base, "DESENHO TÉCNICO", caminho_final, f"[DESENHO] {self.in_titulo.text()}")
+                QMessageBox.information(self, "Sucesso", "Desenho salvo!")
+            else: # IPT/IAM
+                ext = ".iam" if doc.DocumentType == 12291 else ".ipt"
+                caminho_final = os.path.join(destino, "3d", cod_final + ext)
+                os.makedirs(os.path.dirname(caminho_final), exist_ok=True)
+                inventor.salvar_peca(doc, caminho_final, self.in_titulo.text(), self.in_projeto.text(), self.in_desc.text(), cod_final)
+                inventor.capturar_print(app, destino, cod_final)
+                self.registrar_db(cod_final, self.cb_tipo.currentText(), caminho_final, self.in_titulo.text())
+                QMessageBox.information(self, "Sucesso", f"Peça salva: {cod_final}")
+        except Exception as e: QMessageBox.critical(self, "Erro", str(e))
+
+    def registrar_db(self, cod, tipo, caminho, titulo):
+        linha = [datetime.now().strftime("%Y-%m-%d %H:%M"), cod, self.in_prefixo.text(), "", 
+                 tipo, self.in_projeto.text(), titulo, self.in_desc.text(), "ATIVO", caminho]
+        dados.gravar_linha(self.caminho_db_atual, linha)
+        self.cfg["ultimo_prefixo"] = self.in_prefixo.text(); self.cfg["ultimo_projeto"] = self.in_projeto.text()
+        config.salvar(self.cfg); self.atualizar_lista()
+
+    def acao_editar(self):
+        sel = self.get_selecionado()
+        if not sel: return
+        cod, caminho = sel
+        row = self.table.currentRow()
+        dlg = QDialog(self); dlg.setWindowTitle(f"Editar: {cod}")
+        form = QFormLayout(dlg)
+        et = QLineEdit(self.table.item(row, 2).text()); ep = QLineEdit(self.in_projeto.text()); ed = QLineEdit(self.table.item(row, 3).text())
+        form.addRow("Título:", et); form.addRow("Projeto:", ep); form.addRow("Descrição:", ed)
+        btn = QPushButton("Salvar"); btn.clicked.connect(dlg.accept); form.addRow(btn)
+        if dlg.exec():
+            novos = {'titulo': et.text(), 'projeto': ep.text(), 'descricao': ed.text()}
+            app = inventor.obter_app()
+            if app and os.path.exists(caminho):
+                inventor.atualizar_propriedades(app, caminho, novos)
+                base = os.path.splitext(caminho)[0]
+                path_dwg = base.replace("3d", "desenhos\\ED") + "-DT.idw"
+                if os.path.exists(path_dwg): inventor.atualizar_propriedades(app, path_dwg, novos)
+            dados.editar_registro(self.caminho_db_atual, cod, novos); self.atualizar_lista()
+
+    def acao_inserir_montagem(self):
+        sel = self.get_selecionado()
+        if sel:
+            app = inventor.obter_app()
+            if app: 
+                try: 
+                    inventor.inserir_componente_montagem(app, sel[1])
+                    self.focar_inventor(app) 
+                except Exception as e: QMessageBox.warning(self, "Erro", str(e))
+
+    def acao_abrir_inventor(self):
+        sel = self.get_selecionado()
+        if sel: 
+            app = inventor.obter_app()
+            if app and os.path.exists(sel[1]): 
+                inventor.abrir_arquivo(app, sel[1])
+                self.focar_inventor(app) 
+
+    def acao_abrir_local(self):
+        sel = self.get_selecionado()
+        if sel: subprocess.run(f'explorer /select,"{sel[1]}"')
 
     def acao_excluir(self):
-        sel = self.tree.selection()
-        if not sel: return
-        cod = self.tree.item(sel[0])['values'][0]; caminho = self.tree.item(sel[0])['tags'][1]
-        if messagebox.askyesno("Excluir", f"Inativar {cod}?"):
-            dados.excluir_logico(self.caminho_db_atual, cod, caminho)
-            self.atualizar_lista()
+        sel = self.get_selecionado()
+        if sel and QMessageBox.question(self, "Excluir", f"Inativar {sel[0]}?") == QMessageBox.Yes:
+            dados.excluir_logico(self.caminho_db_atual, sel[0], sel[1]); self.atualizar_lista()
+
+    def acao_sincronizar(self):
+        if not self.caminho_rede_ativo: return
+        if QMessageBox.question(self, "Sync", "Mover arquivos?") != QMessageBox.Yes: return
+        self.btn_sync.setText("..."); self.btn_sync.setEnabled(False); QApplication.processEvents()
+        res = dados.sincronizar_arquivos(config.ARQUIVO_CSV_LOCAL, self.caminho_rede_ativo)
+        QMessageBox.information(self, "Info", res)
+        self.btn_sync.setText("☁ Sincronizar"); self.btn_sync.setEnabled(True); self.atualizar_lista()
+
+    def acao_exportar_laser(self):
+        app = inventor.obter_app()
+        if app: inventor.executar_ilogic(app, scripts_vb.SCRIPT_EXPORTAR_LASER)
+
+    def acao_lista_fixadores(self):
+        app = inventor.obter_app()
+        if app: inventor.executar_ilogic(app, scripts_vb.SCRIPT_LISTA_FIXADORES)
+
+    def mostrar_menu_contexto(self, pos):
+        menu = QMenu()
+        menu.setStyleSheet("QMenu { background-color: #2E3440; color: white; border: 1px solid #555; } QMenu::item:selected { background-color: #007ACC; }")
+        menu.addAction("Abrir", self.acao_abrir_inventor); menu.addAction("Inserir", self.acao_inserir_montagem)
+        menu.addAction("Pasta", self.acao_abrir_local); menu.addSeparator()
+        menu.addAction("Editar", self.acao_editar); menu.addAction("Excluir", self.acao_excluir)
+        menu.exec(self.table.mapToGlobal(pos))
+
+    def ao_alternar_filtro(self):
+        # Salva o estado atual no config.json
+        self.cfg["ocultar_desenhos"] = self.chk_desenhos.isChecked()
+        self.cfg["mostrar_inativos"] = self.chk_lixeira.isChecked() # Salva "Lixeira"
+        config.salvar(self.cfg)
+        self.atualizar_lista()
 
     def conectar_rede(self):
-        ip = self.cfg.get("ip"); path = self.cfg.get("path"); user = self.cfg.get("user"); senha = self.cfg.get("pass")
+        ip = self.cfg.get("ip"); path = self.cfg.get("path")
         unc = f"\\\\{ip}\\{path}"
-        if not os.path.exists(unc):
-            try: subprocess.run(f'net use "{unc}" /user:{user} "{senha}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except: pass
+        if not os.path.exists(unc): subprocess.run(f'net use "{unc}" /user:{self.cfg.get("user")} "{self.cfg.get("pass")}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if os.path.exists(unc):
-            self.caminho_rede_ativo = unc
-            self.caminho_db_atual = os.path.join(unc, "registro_pecas.csv")
+            self.caminho_rede_ativo = unc; self.caminho_db_atual = os.path.join(unc, "registro_pecas.csv")
             dados.garantir_csv(self.caminho_db_atual)
-            self.root.after(0, lambda: [self.lbl_rede.config(text=f"Servidor: {ip} (OK)", bg="#ccffcc"), self.btn_sync.config(state="normal")])
-            self.root.after(0, self.atualizar_lista)
-        else: self.root.after(0, lambda: self.lbl_rede.config(text="Modo: LOCAL (Falha Rede)", bg="#ffcccc"))
+            self.lbl_rede.setText(f"SRV: {ip} (OK)"); self.lbl_rede.setStyleSheet("color: #A3BE8C; font-weight: bold;")
+            self.btn_sync.setEnabled(True); self.atualizar_lista()
+            app = inventor.obter_app()
+            if app: inventor.configurar_content_center(app, unc)
+        else: self.lbl_rede.setText("LOCAL (Falha Rede)"); self.lbl_rede.setStyleSheet("color: #BF616A;")
 
     def janela_servidor(self):
-        top = tk.Toplevel(self.root); top.title("Config"); top.geometry("300x350")
-        tk.Label(top, text="IP:").pack(); ip=tk.Entry(top); ip.pack()
-        tk.Label(top, text="Pasta:").pack(); path=tk.Entry(top); path.pack()
-        tk.Label(top, text="User:").pack(); user=tk.Entry(top); user.pack()
-        tk.Label(top, text="Senha:").pack(); pw=tk.Entry(top, show="*"); pw.pack()
-        ip.insert(0, self.cfg.get("ip","")); path.insert(0, self.cfg.get("path",""))
-        user.insert(0, self.cfg.get("user","")); pw.insert(0, self.cfg.get("pass",""))
-        self.var_check_servidor = tk.BooleanVar(value=self.cfg.get("usar_servidor", False))
-        tk.Checkbutton(top, text="Usar Servidor", variable=self.var_check_servidor).pack(pady=10)
-        def salvar():
-            self.cfg.update({"ip": ip.get(), "path": path.get(), "user": user.get(), "pass": pw.get(), "usar_servidor": self.var_check_servidor.get()})
-            config.salvar(self.cfg)
-            top.destroy(); messagebox.showinfo("Info", "Reinicie o programa.")
-        tk.Button(top, text="Salvar", bg="#4CAF50", fg="white", command=salvar).pack(pady=5)
+        dlg = QDialog(self); dlg.setWindowTitle("Config"); dlg.resize(300, 200)
+        form = QFormLayout(dlg)
+        i_ip = QLineEdit(self.cfg.get("ip")); i_path = QLineEdit(self.cfg.get("path"))
+        i_user = QLineEdit(self.cfg.get("user")); i_pass = QLineEdit(self.cfg.get("pass")); i_pass.setEchoMode(QLineEdit.Password)
+        chk = QCheckBox("Usar Servidor"); chk.setChecked(self.cfg.get("usar_servidor", False))
+        form.addRow("IP:", i_ip); form.addRow("Pasta:", i_path); form.addRow("User:", i_user); form.addRow("Pass:", i_pass); form.addRow(chk)
+        btn = QPushButton("Salvar"); btn.clicked.connect(dlg.accept); form.addRow(btn)
+        if dlg.exec():
+            self.cfg.update({"ip": i_ip.text(), "path": i_path.text(), "user": i_user.text(), "pass": i_pass.text(), "usar_servidor": chk.isChecked()})
+            config.salvar(self.cfg); QMessageBox.information(self, "Info", "Reinicie.")

@@ -74,9 +74,6 @@ def abrir_arquivo(app, caminho_arquivo):
     return doc
 
 def inserir_componente_montagem(app, caminho_arquivo):
-    """
-    Método Estável: Insere na origem (0,0,0) e maximiza a janela.
-    """
     if not os.path.exists(caminho_arquivo): raise Exception("Arquivo não encontrado.")
     doc = app.ActiveDocument
     if not doc or doc.DocumentType != 12291: raise Exception("Abra uma montagem (.iam).")
@@ -88,13 +85,12 @@ def inserir_componente_montagem(app, caminho_arquivo):
         
         app.Visible = True
         hwnd = app.MainFrameHWND
-        ctypes.windll.user32.ShowWindow(hwnd, 3) # SW_MAXIMIZE
+        ctypes.windll.user32.ShowWindow(hwnd, 3) 
         ctypes.windll.user32.SetForegroundWindow(hwnd)
         
     except Exception as e:
         raise Exception(f"Erro ao inserir componente: {e}")
 
-# --- FUNÇÃO RESTAURADA PARA ILOGIC ---
 def executar_ilogic(app, codigo_vb):
     doc = app.ActiveDocument
     if not doc: raise Exception("Nenhum documento aberto.")
@@ -116,3 +112,44 @@ def executar_ilogic(app, codigo_vb):
         if caminho_temp and os.path.exists(caminho_temp):
             try: os.remove(caminho_temp)
             except: pass
+
+# --- NOVA FUNÇÃO: CONFIGURAR BIBLIOTECA NO SERVIDOR ---
+def configurar_content_center(app, pasta_rede):
+    """
+    Configura o caminho dos arquivos do Content Center.
+    Retorna (Sucesso, Mensagem de Erro/Sucesso)
+    """
+    try:
+        # 1. Tenta criar a pasta na rede (Testa permissão de escrita)
+        caminho_cc_rede = os.path.join(pasta_rede, "Content Center Files")
+        if not os.path.exists(caminho_cc_rede):
+            try:
+                os.makedirs(caminho_cc_rede)
+            except Exception as e:
+                return False, f"Sem permissão para criar pasta no servidor:\n{e}"
+            
+        # 2. Acessa o Projeto Ativo
+        design_proj = app.DesignProjectManager.ActiveDesignProject
+        
+        # Verifica se o projeto permite edição
+        # (Alguns projetos são 'Somente Leitura' ou Single User travados)
+        if not design_proj:
+            return False, "Nenhum projeto ativo encontrado."
+
+        # 3. Aplica a mudança
+        caminho_atual = design_proj.ContentCenterPath
+        
+        if caminho_atual.lower() != caminho_cc_rede.lower():
+            # Tenta definir o caminho
+            try:
+                design_proj.ContentCenterPath = caminho_cc_rede
+                design_proj.Save()
+            except Exception as e:
+                return False, f"O Inventor recusou o caminho de rede.\nVerifique se o Projeto (.ipj) não é somente leitura.\nErro: {e}"
+                
+            return True, f"Configurado para:\n{caminho_cc_rede}"
+        else:
+            return True, "Já configurado corretamente."
+            
+    except Exception as e:
+        return False, f"Erro genérico ao configurar: {e}"

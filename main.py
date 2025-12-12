@@ -1,19 +1,26 @@
-import tkinter as tk
 import sys
 import os
-from interface import AppGUI
-
-def resource_path(relative_path):
-    """Permite acessar arquivos incluídos no executável PyInstaller."""
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return relative_path
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
+from interface import MainWindow # Agora importamos MainWindow, não AppGUI
+import config
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    # Cria a instância da aplicação Qt
+    app = QApplication(sys.argv)
+    
+    # Define informações básicas
+    app.setApplicationName("Invenio")
+    app.setApplicationVersion("2.0")
 
-    # Define o ícone da janela
-    root.iconbitmap(resource_path("icon.ico"))
+    # Define ícone da janela e da taskbar
+    icone_path = config.obter_caminho_recurso("icon.ico")
+    if os.path.exists(icone_path):
+        app.setWindowIcon(QIcon(icone_path))
 
-    app = AppGUI(root)
-    root.mainloop()
+    # Inicia a Interface Principal
+    janela = MainWindow()
+    janela.show()
+
+    # Loop de execução
+    sys.exit(app.exec())
