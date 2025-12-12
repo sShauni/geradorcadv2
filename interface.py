@@ -224,7 +224,7 @@ QScrollBar::handle:vertical { background: #5D697E; min-height: 15px; border-radi
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Invenio 2.0")
+        self.setWindowTitle("Invenio 2.1")
         
         # ### CORREÇÃO 2: APLICAÇÃO DE GEOMETRIA SALVA ###
         # Carrega config
@@ -267,6 +267,11 @@ class MainWindow(QMainWindow):
         self.ico_sync   = QIcon(os.path.join(path_base, "sync.png"))
         self.ico_laser  = QIcon(os.path.join(path_base, "dxf.png"))
         self.ico_fix    = QIcon(os.path.join(path_base, "fix.png"))
+        
+        caminho_checker = os.path.join(path_base, "checker.png")
+        caminho_checker = caminho_checker.replace("\\", "/")
+        qss_final = QSS_INVENTOR.replace("checker.png", caminho_checker)
+        self.setStyleSheet(qss_final)
         
         dados.garantir_csv(self.caminho_db_atual)
         self.setup_ui()
