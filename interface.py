@@ -9,8 +9,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                                QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
                                QComboBox, QCheckBox, QMessageBox, QFileDialog, 
-                               QMenu, QGroupBox, QDialog, QFormLayout)
-from PySide6.QtCore import Qt, QTimer, QRect, QSize
+                               QMenu, QGroupBox, QDialog, QFormLayout, QProgressDialog)
+from PySide6.QtCore import Qt, QTimer, QRect, QSize, QThread, Signal
 from PySide6.QtGui import QColor, QFont, QPixmap, QImage, QIcon
 
 # --- Importações do Projeto ---
@@ -19,16 +19,15 @@ import config
 import dados
 import inventor
 import scripts_vb 
+import updater
 
 # ### CORREÇÃO 1: RESOLUÇÃO BORRADA (HIGH DPI) ###
-# Isso avisa o Windows que o App sabe lidar com alta resolução, 
-# evitando que o Windows "estique" a janela e deixe borrado.
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(1)
 except Exception:
-    pass # Windows 7 ou anterior pode não ter essa chamada, ignorar.
+    pass 
 
-os.environ["QT_FONT_DPI"] = "96" # Ajuda a manter fontes consistentes
+os.environ["QT_FONT_DPI"] = "96" 
 
 # === ESTILO VISUAL LIMPO & CORRIGIDO ===
 QSS_INVENTOR = """
@@ -49,27 +48,27 @@ QFrame#FrameEsquerdo {
 }
 
 QDialog {
-    background-color: #2F3642; /* Fundo Escuro Base */
+    background-color: #2F3642;
     border: 1px solid #454E61;
 }
 
 QLabel {
-    color: #A0A8B8; /* Texto cinza claro para rótulos */
+    color: #A0A8B8;
     font-size: 11px;
     font-weight: bold;
     font-family: 'Segoe UI';
 }
 
-/* Títulos das Seções (ex: "CONFIGURAÇÕES DE REDE") */
+/* Títulos das Seções */
 QLabel#TituloSecao {
-    color: #6D7685; /* Cinza mais escuro, estilo caixa alta */
+    color: #6D7685;
     font-weight: bold;
     padding-bottom: 5px;
-    border-bottom: 1px solid #3E4654; /* Linha separadora */
+    border-bottom: 1px solid #3E4654;
 }
 
 QLineEdit {
-    background-color: #262B35; /* Fundo do input mais escuro */
+    background-color: #262B35;
     border: 1px solid #3E4654;
     color: white;
     padding: 6px;
@@ -81,33 +80,26 @@ QLineEdit:focus { border: 1px solid #88C0D0; }
 /* === CHECKBOX === */
 QCheckBox {
     color: #E0E0E0;
-    font-size: 13px;    /* Tamanho da fonte */
-    spacing: 8px;       /* Espaço entre o quadrado e o texto */
+    font-size: 13px;
+    spacing: 8px;
 }
 
-/* O quadrado (Indicador) */
 QCheckBox::indicator {
-    width: 18px;        /* Largura do quadrado */
-    height: 18px;       /* Altura do quadrado */
+    width: 18px;
+    height: 18px;
     background-color: transparent;
     border: 1px solid #748596;
-    border-radius: 1px; /* Bordas levemente arredondadas */
+    border-radius: 1px;
 }
 
-/* Quando passa o mouse */
 QCheckBox::indicator:hover {
     border: 1px solid #FFFFFF;
 }
 
-/* Quando está marcado (Checked) */
 QCheckBox::indicator:checked {
     background-color: white;
     border: 1px solid white;
-    image: url(checker.png);
-    
-    /* DICA: Se quiser uma imagem de "visto" real, você precisaria de um arquivo .png
-       e usaria: image: url(check.png); 
-       Sem imagem, ele fica um quadrado azul sólido, estilo "flat". */
+    image: url("checker.png");
 }
 
 QGroupBox { 
@@ -135,7 +127,7 @@ QLineEdit:read-only {
     background-color: #303642; color: #88C0D0; font-weight: bold; border: none; border-bottom: 2px solid #748596;
 }
 
-/* --- CORREÇÃO DO MENU SUSPENSO --- */
+/* --- COMBOBOX --- */
 QComboBox::drop-down { border: none; width: 20px; }
 QComboBox QAbstractItemView {
     background-color: #454F61;
@@ -173,29 +165,27 @@ QPushButton {
     padding: 4px 15px; border-radius: 2px; color: white;
     min-height: 30px; max-height: 34px;
     font-weight: bold;
-    font-size: 8;
+    font-size: 8pt;
 }
 QPushButton:hover { background-color: #3a4252; border: none; }
 QPushButton:pressed { background-color: #435C74; border: 1px solid #3D84AA; border-radius: 2px; }
     
-/* Botões de Ação (Direita) - Alinhamento Texto + Ícone */
 QPushButton.BtnAcao { 
     text-align: left; 
-    padding-left: 15px; /* Mais espaço para o ícone não grudar na borda */
+    padding-left: 15px;
 }
 
-/* --- BOTÃO DE CONFIGURAÇÃO (ENGRENAGEM) --- */
 QPushButton#BtnConfig {
     background-color: transparent;
     border: none;
     border-radius: 4px;
-    min-width: 32px; max-width: 32px; /* Quadrado */
+    min-width: 32px; max-width: 32px;
 }
 QPushButton#BtnConfig:hover {
-    background-color: #1e2229; /* Fundo suave ao passar o mouse */
+    background-color: #1e2229;
     border: none;
 }
-/* Destaques Esquerda */
+
 QPushButton#BtnGerar {
     background-color: transparent; border: 1px solid #748596; border-style: solid;
     min-height: 32px; max-height: 32px; font-weight: bold; font-size: 13px;
@@ -221,29 +211,28 @@ QScrollBar:vertical { background: #454F61; width: 6px; }
 QScrollBar::handle:vertical { background: #5D697E; min-height: 15px; border-radius: 3px; }
 """
 
+class CheckUpdateWorker(QThread):
+    update_encontrado = Signal(str, str) # tag, url
+
+    def __init__(self, versao_atual):
+        super().__init__()
+        self.upd = updater.Updater(versao_atual)
+
+    def run(self):
+        tem_update, tag, url = self.upd.verificar_atualizacao()
+        if tem_update:
+            self.update_encontrado.emit(tag, url)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Invenio 2.1")
         
-        # ### CORREÇÃO 2: APLICAÇÃO DE GEOMETRIA SALVA ###
         # Carrega config
         self.cfg = config.carregar()
         
-        # Define tamanho padrão inicial
-        default_rect = [100, 100, 1280, 720] 
-        
-        # Tenta carregar do config
-        rect_salvo = self.cfg.get("janela_geo", default_rect)
-        is_maximized = self.cfg.get("janela_max", False)
-
-        # Aplica geometria (x, y, w, h)
-        if len(rect_salvo) == 4:
-            self.setGeometry(*rect_salvo)
-
-        # Se estava maximizado, maximiza agora
-        if is_maximized:
-            self.showMaximized()
+        # Define tamanho padrão inicial (Backup)
+        self.resize(1280, 720) 
 
         self.setStyleSheet(QSS_INVENTOR)
         
@@ -277,11 +266,8 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         
         try:
-            # Pega o ID da janela (handle)
             hwnd = int(self.winId())
-            # Constante do Windows para "Immersive Dark Mode"
             DWMWA_USE_IMMERSIVE_DARK_MODE = 20 
-            # Chama a API do Windows para forçar a barra escura
             ctypes.windll.dwmapi.DwmSetWindowAttribute(
                 hwnd, 
                 DWMWA_USE_IMMERSIVE_DARK_MODE, 
@@ -289,25 +275,62 @@ class MainWindow(QMainWindow):
                 4
             )
         except Exception as e:
-            print(f"Não foi possível aplicar tema escuro na barra: {e}")
+            print(f"Theme Error: {e}")
         
         if self.cfg.get("usar_servidor"):
             QTimer.singleShot(100, self.conectar_rede)
         else:
             self.atualizar_lista()
+    
+        # === SISTEMA DE UPDATE ===
+        self.VERSAO_ATUAL = "2.1" 
+        self.worker_update = CheckUpdateWorker(self.VERSAO_ATUAL)
+        self.worker_update.update_encontrado.connect(self.mostrar_aviso_update)
+        self.worker_update.start()
+
+        # === CORREÇÃO DE JANELA ===
+        # Executa a restauração da geometria logo após a janela ser criada
+        QTimer.singleShot(10, self.restaurar_geometria)
+
+    def restaurar_geometria(self):
+        """Aplica a posição de forma segura, evitando bugs visuais."""
+        default_rect = [100, 100, 1280, 720]
+        rect_salvo = self.cfg.get("janela_geo", default_rect)
+        is_maximized = self.cfg.get("janela_max", False)
+
+        # Validação: Se o tamanho salvo for muito pequeno (bug), usa padrão
+        if len(rect_salvo) == 4:
+            x, y, w, h = rect_salvo
+            if w < 200 or h < 200: 
+                rect_salvo = default_rect
+            
+            # Aplica a geometria (posição e tamanho "normal")
+            self.setGeometry(*rect_salvo)
+
+        # Se tiver que maximizar, faz isso POR ÚLTIMO
+        if is_maximized:
+            self.showMaximized()
 
     def closeEvent(self, event):
-        """Salva a geometria e estado da janela antes de fechar."""
+        """Salva o estado ao fechar."""
         try:
-            # Salva se está maximizada
-            self.cfg["janela_max"] = self.isMaximized()
+            # 1. Salva se está maximizado
+            esta_maximizada = self.isMaximized()
+            self.cfg["janela_max"] = esta_maximizada
             
-            # Se NÃO estiver maximizada, salva o tamanho e posição exatos.
-            # (Se estiver maximizada, não salvamos o tamanho gigante, para que ao
-            # restaurar ela volte ao tamanho normal anterior).
-            if not self.isMaximized():
+            # 2. Salva a geometria
+            if esta_maximizada:
+                # Se está maximizada, salvamos o tamanho "restaurado/normal"
+                # para que quando o usuário desmaximizar, ela tenha um tamanho decente.
+                geo = self.normalGeometry()
+            else:
+                # Se não está, salva o tamanho atual
                 geo = self.geometry()
-                self.cfg["janela_geo"] = [geo.x(), geo.y(), geo.width(), geo.height()]
+            
+            # Garante que não salvamos valores negativos loucos (comuns em multi-monitor)
+            x = max(0, geo.x())
+            y = max(0, geo.y())
+            self.cfg["janela_geo"] = [x, y, geo.width(), geo.height()]
             
             config.salvar(self.cfg)
         except Exception as e:
@@ -508,8 +531,6 @@ class MainWindow(QMainWindow):
                 # Se estiver minimizado, restaura (SW_RESTORE = 9)
                 ctypes.windll.user32.ShowWindow(hwnd, 9)
             else:
-                # Se já estiver normal ou maximizado, NÃO chame ShowWindow.
-                # Apenas traga para frente.
                 pass
             
             # Traz para frente e define foco
@@ -733,6 +754,39 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             self.cfg.update({"ip": i_ip.text(), "path": i_path.text(), "user": i_user.text(), "pass": i_pass.text(), "usar_servidor": chk.isChecked()})
             config.salvar(self.cfg); QMessageBox.information(self, "Info", "Reinicie.")
+    
+    # === MÉTODOS DE UPDATE ===
+    def mostrar_aviso_update(self, tag, url):
+        msg = (f"Nova versão {tag} disponível!\nDeseja atualizar agora?")
+        resp = QMessageBox.question(self, "Atualização Disponível", msg)
+        
+        if resp == QMessageBox.Yes:
+            self.iniciar_download_update(url)
+
+    def iniciar_download_update(self, url):
+        # Cria diálogo de progresso
+        progress = QProgressDialog("Baixando atualização...", "Cancelar", 0, 100, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setAutoClose(False) # Não fecha sozinho no 100% para dar tempo de ver
+        progress.show()
+        
+        upd = updater.Updater(self.VERSAO_ATUAL)
+        
+        # Função interna para atualizar a barra
+        def atualizar_barra(valor):
+            progress.setValue(valor)
+            QApplication.processEvents() # Mantém a GUI responsiva
+        
+        # Executa o download (bloqueante para simplificar, mas com processEvents na callback)
+        sucesso = upd.baixar_atualizacao(url, callback_progresso=atualizar_barra)
+        
+        progress.close()
+        
+        if sucesso:
+            QMessageBox.information(self, "Sucesso", "O Invenio será reiniciado para aplicar a atualização.")
+            upd.aplicar_atualizacao() # Isso fecha o programa
+        else:
+            QMessageBox.critical(self, "Erro", "Falha ao baixar atualização. Verifique sua conexão.")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

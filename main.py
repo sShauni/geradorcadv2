@@ -18,8 +18,6 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 if __name__ == "__main__":
-    # 1. CORREÇÃO DA BARRA DE TAREFAS (AppID)
-    # Isso diz ao Windows: "Eu sou o Invenio, não sou o Python genérico."
     myappid = 'empresa.invenio.cad.v2' 
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
