@@ -9,8 +9,13 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                                QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
                                QComboBox, QCheckBox, QMessageBox, QFileDialog, 
+<<<<<<< HEAD
+                               QMenu, QGroupBox, QDialog, QFormLayout)
+from PySide6.QtCore import Qt, QTimer, QRect, QSize, Signal, QThread
+=======
                                QMenu, QGroupBox, QDialog, QFormLayout, QProgressDialog)
 from PySide6.QtCore import Qt, QTimer, QRect, QSize, QThread, Signal
+>>>>>>> b9b3ae538bf17b7da839395c142a2e674acef179
 from PySide6.QtGui import QColor, QFont, QPixmap, QImage, QIcon
 
 # --- Importações do Projeto ---
@@ -35,7 +40,7 @@ QSS_INVENTOR = """
 QMainWindow { background-color: #454e61; }
 QWidget { 
     color: #E0E0E0; 
-    font-family: 'Segoe UI', Arial; 
+    font-family: 'Calibri'; 
     font-size: 12px; 
     border: none; 
 }
@@ -163,9 +168,14 @@ QPushButton {
     background-color: transparent; 
     border: none;
     padding: 4px 15px; border-radius: 2px; color: white;
-    min-height: 30px; max-height: 34px;
+    min-height: 36px; max-height: 40px;
+    font-family: 'Calibri';
     font-weight: bold;
+<<<<<<< HEAD
+    font-size: 14px;
+=======
     font-size: 8pt;
+>>>>>>> b9b3ae538bf17b7da839395c142a2e674acef179
 }
 QPushButton:hover { background-color: #3a4252; border: none; }
 QPushButton:pressed { background-color: #435C74; border: 1px solid #3D84AA; border-radius: 2px; }
@@ -188,21 +198,28 @@ QPushButton#BtnConfig:hover {
 
 QPushButton#BtnGerar {
     background-color: transparent; border: 1px solid #748596; border-style: solid;
-    min-height: 32px; max-height: 32px; font-weight: bold; font-size: 13px;
+    min-height: 40px;
+    max-height: 45px;
+    font-weight: bold;
+    font-size: 15px;
 }
 QPushButton#BtnGerar:hover { background-color: #2E3440; border: 1px solid white; }
 QPushButton#BtnGerar:pressed { background-color: transparent; border: 1px solid #515d6c; border-radius: 2px; }
 
 QPushButton#BtnSalvarEsq {
     background-color: #2E3440; border: 1px solid #748596; border: 1px solid #748596; border-style: solid;
-    color: #FFFFFF; min-height: 32px; max-height: 32px; font-weight: bold; font-size: 13px;
+    color: #FFFFFF;
+    min-height: 40px;
+    max-height: 45px;
+    font-weight: bold;
+    font-size: 14px;
 }
 QPushButton#BtnSalvarEsq:hover { background-color: transparent; border: 1px solid white; }
 QPushButton#BtnSalvarEsq:pressed { background-color: transparent; border: 1px solid #515d6c; border-radius: 2px; }
 
 QPushButton#BtnSync {
     background-color: transparent; border: 1px solid #748596; border-style: solid;
-    font-size: 11px; color: white; border: 1px solid #4C566A;
+    font-size: 14px; color: white; border: 1px solid #4C566A;
 }
 QPushButton#BtnSync:hover { background-color: transparent; border: 1px solid white; }
 QPushButton#BtnSync:pressed { background-color: transparent; border: 1px solid #515d6c; border-radius: 2px; }
@@ -211,6 +228,46 @@ QScrollBar:vertical { background: #454F61; width: 6px; }
 QScrollBar::handle:vertical { background: #5D697E; min-height: 15px; border-radius: 3px; }
 """
 
+<<<<<<< HEAD
+class WorkerConexao(QThread):
+    # Sinais para comunicar com a interface principal
+    finalizado = Signal(bool, str, str) # (Sucesso, Mensagem, CaminhoConfirmado)
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+
+    def run(self):
+        ip = self.cfg.get("ip")
+        path = self.cfg.get("path")
+        user = self.cfg.get("user")
+        senha = self.cfg.get("pass")
+        
+        unc = f"\\\\{ip}\\{path}"
+        
+        # 1. Tenta verificar se já existe (rápido)
+        if os.path.exists(unc):
+            self.finalizado.emit(True, f"SRV: {ip} (OK)", unc)
+            return
+
+        # 2. Se não existe, tenta conectar com timeout de 5 segundos
+        cmd = f'net use "{unc}" /user:{user} "{senha}"'
+        try:
+            # O timeout=5 garante que não fique travado para sempre
+            subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            
+            # 3. Verifica novamente se conectou
+            if os.path.exists(unc):
+                self.finalizado.emit(True, f"SRV: {ip} (OK)", unc)
+            else:
+                self.finalizado.emit(False, "LOCAL (Falha Rede)", "")
+                
+        except subprocess.TimeoutExpired:
+            # Se passar de 5 segundos, aborta
+            self.finalizado.emit(False, "LOCAL (Timeout)", "")
+        except Exception as e:
+            self.finalizado.emit(False, "LOCAL (Erro)", "")
+=======
 class CheckUpdateWorker(QThread):
     update_encontrado = Signal(str, str) # tag, url
 
@@ -222,6 +279,7 @@ class CheckUpdateWorker(QThread):
         tem_update, tag, url = self.upd.verificar_atualizacao()
         if tem_update:
             self.update_encontrado.emit(tag, url)
+>>>>>>> b9b3ae538bf17b7da839395c142a2e674acef179
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -519,6 +577,8 @@ class MainWindow(QMainWindow):
         layout_dir.addLayout(action_bar)
         
         main_layout.addWidget(frame_dir)
+        
+        self.setup_placeholder()
     
     def focar_inventor(self, app):
         """Traz a janela do Inventor para frente sem bugar o estado."""
@@ -571,6 +631,14 @@ class MainWindow(QMainWindow):
             self.table.setItem(i, 3, QTableWidgetItem(row[7]))
             self.table.setItem(i, 4, QTableWidgetItem(row[8]))
             for k in range(5): self.table.item(i, k).setForeground(c)
+            
+        if len(regs) == 0:
+            self.widget_vazio.show()
+            self.widget_vazio.adjustSize() # Garante que o tamanho está correto
+            # Força um evento de resize para calcular a posição central
+            self.ao_redimensionar_tabela(None) 
+        else:
+            self.widget_vazio.hide()
 
     def ao_selecionar(self):
         sel = self.table.selectedItems()
@@ -731,17 +799,46 @@ class MainWindow(QMainWindow):
         self.atualizar_lista()
 
     def conectar_rede(self):
-        ip = self.cfg.get("ip"); path = self.cfg.get("path")
-        unc = f"\\\\{ip}\\{path}"
-        if not os.path.exists(unc): subprocess.run(f'net use "{unc}" /user:{self.cfg.get("user")} "{self.cfg.get("pass")}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if os.path.exists(unc):
-            self.caminho_rede_ativo = unc; self.caminho_db_atual = os.path.join(unc, "registro_pecas.csv")
+        """Inicia o processo de conexão em segundo plano sem travar a tela."""
+        # Feedback Visual Imediato (Azul Ciano)
+        self.lbl_rede.setText("CONECTANDO...")
+        self.lbl_rede.setStyleSheet("color: #00FFFF; font-weight: bold;") # Cyan Brilhante
+        
+        # Cria a thread de trabalho
+        self.thread_rede = WorkerConexao(self.cfg)
+        
+        # Conecta o sinal da thread ao método que vai lidar com o resultado
+        self.thread_rede.finalizado.connect(self.ao_terminar_conexao)
+        
+        # Inicia a thread (o código roda em paralelo agora)
+        self.thread_rede.start()
+        
+    def ao_terminar_conexao(self, sucesso, msg, caminho_unc):
+        """Chamado automaticamente quando a thread termina (após max 5s)."""
+        if sucesso:
+            # Sucesso (Verde)
+            self.caminho_rede_ativo = caminho_unc
+            self.caminho_db_atual = os.path.join(caminho_unc, "registro_pecas.csv")
             dados.garantir_csv(self.caminho_db_atual)
-            self.lbl_rede.setText(f"SRV: {ip} (OK)"); self.lbl_rede.setStyleSheet("color: #A3BE8C; font-weight: bold;")
-            self.btn_sync.setEnabled(True); self.atualizar_lista()
+            
+            self.lbl_rede.setText(msg)
+            self.lbl_rede.setStyleSheet("color: #A3BE8C; font-weight: bold;") # Verde Nord
+            self.btn_sync.setEnabled(True)
+            
+            # Tenta configurar Content Center do Inventor
             app = inventor.obter_app()
-            if app: inventor.configurar_content_center(app, unc)
-        else: self.lbl_rede.setText("LOCAL (Falha Rede)"); self.lbl_rede.setStyleSheet("color: #BF616A;")
+            if app: inventor.configurar_content_center(app, caminho_unc)
+            
+        else:
+            # Falha (Vermelho)
+            self.lbl_rede.setText(msg)
+            self.lbl_rede.setStyleSheet("color: #BF616A; font-weight: bold;") # Vermelho Nord
+            self.caminho_rede_ativo = None
+            # Volta para o DB local
+            self.caminho_db_atual = config.ARQUIVO_CSV_LOCAL
+            
+        # Atualiza a lista independente do resultado (para mostrar local ou rede)
+        self.atualizar_lista()
 
     def janela_servidor(self):
         dlg = QDialog(self); dlg.setWindowTitle("Config"); dlg.resize(300, 200)
@@ -754,6 +851,76 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             self.cfg.update({"ip": i_ip.text(), "path": i_path.text(), "user": i_user.text(), "pass": i_pass.text(), "usar_servidor": chk.isChecked()})
             config.salvar(self.cfg); QMessageBox.information(self, "Info", "Reinicie.")
+<<<<<<< HEAD
+            
+    def setup_placeholder(self):
+        """Cria o widget de aviso quando não há arquivos."""
+        self.widget_vazio = QWidget(self.table)
+        self.widget_vazio.setObjectName("WidgetVazio")
+        self.widget_vazio.setAttribute(Qt.WA_TransparentForMouseEvents) # Deixa clicar através se necessário
+        
+        # Layout vertical para empilhar Ícone e Texto
+        ly_vazio = QVBoxLayout(self.widget_vazio)
+        ly_vazio.setAlignment(Qt.AlignCenter)
+        ly_vazio.setSpacing(10) # Espaço entre a caixa e o texto
+        
+        # 1. Ícone da Caixa
+        self.lbl_icon_vazio = QLabel()
+        self.lbl_icon_vazio.setAlignment(Qt.AlignCenter)
+        # Tenta carregar a imagem (salve seu png como 'box_empty.png' na pasta do script)
+        path_img = os.path.join(os.path.dirname(os.path.abspath(__file__)), "box_empty.png")
+        if os.path.exists(path_img):
+            pixmap = QPixmap(path_img)
+            # Redimensiona se for muito grande (opcional, ajustando para 64x64 por exemplo)
+            pixmap = pixmap.scaled(256, 256, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.lbl_icon_vazio.setPixmap(pixmap)
+        else:
+            self.lbl_icon_vazio.setText("📦") # Fallback se não achar a imagem
+            self.lbl_icon_vazio.setStyleSheet("font-size: 40px;")
+
+        # 2. Texto
+        self.lbl_txt_vazio = QLabel("Ainda não há nada aqui")
+        self.lbl_txt_vazio.setAlignment(Qt.AlignCenter)
+        # Configuração da Fonte Calibri Negrito solicitada
+        self.lbl_txt_vazio.setStyleSheet("""
+            QLabel {
+                font-family: 'Calibri';
+                font-weight: bold;
+                font-size: 24px;
+                color: #E0E0E0; /* Cor clara para contrastar com o fundo escuro */
+                background: transparent;
+            }
+        """)
+
+        ly_vazio.addWidget(self.lbl_icon_vazio)
+        ly_vazio.addWidget(self.lbl_txt_vazio)
+        
+        # Inicialmente escondido
+        self.widget_vazio.hide()
+
+        # --- Hook (Gancho) para manter centralizado ao redimensionar a tabela ---
+        # Salvamos o resizeEvent original da tabela para não quebrá-lo
+        self.original_resize_table = self.table.resizeEvent
+        # Substituímos pelo nosso que chama o centralizar
+        self.table.resizeEvent = self.ao_redimensionar_tabela
+
+    def ao_redimensionar_tabela(self, event):
+        if event: self.original_resize_table(event)
+        """Mantém o placeholder centralizado quando a tabela muda de tamanho."""
+        # Chama o comportamento original da tabela (importante!)
+        self.original_resize_table(event)
+        
+        # Centraliza o widget de aviso
+        if hasattr(self, 'widget_vazio') and self.widget_vazio.isVisible():
+            geo = self.table.viewport().geometry()
+            w_vazio = self.widget_vazio.sizeHint().width()
+            h_vazio = self.widget_vazio.sizeHint().height()
+            
+            x = (geo.width() - w_vazio) // 2
+            y = (geo.height() - h_vazio) // 2
+            
+            self.widget_vazio.setGeometry(x, y, w_vazio, h_vazio)
+=======
     
     # === MÉTODOS DE UPDATE ===
     def mostrar_aviso_update(self, tag, url):
@@ -787,6 +954,7 @@ class MainWindow(QMainWindow):
             upd.aplicar_atualizacao() # Isso fecha o programa
         else:
             QMessageBox.critical(self, "Erro", "Falha ao baixar atualização. Verifique sua conexão.")
+>>>>>>> b9b3ae538bf17b7da839395c142a2e674acef179
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
