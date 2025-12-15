@@ -27,7 +27,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     
     app.setApplicationName("Invenio")
-    app.setApplicationVersion("2.1")
+    app.setApplicationVersion("2.2")
 
     # 2. CARREGAMENTO ROBUSTO DO ÍCONE
     # Usamos a função resource_path para garantir o caminho absoluto

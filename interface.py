@@ -276,7 +276,7 @@ class CheckUpdateWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Invenio 2.1")
+        self.setWindowTitle("Invenio 2.2")
         
         # Carrega config
         self.cfg = config.carregar()
@@ -333,7 +333,7 @@ class MainWindow(QMainWindow):
             self.atualizar_lista()
     
         # === SISTEMA DE UPDATE ===
-        self.VERSAO_ATUAL = "2.1" 
+        self.VERSAO_ATUAL = "2.2" 
         self.worker_update = CheckUpdateWorker(self.VERSAO_ATUAL)
         self.worker_update.update_encontrado.connect(self.mostrar_aviso_update)
         self.worker_update.start()
@@ -940,8 +940,22 @@ class MainWindow(QMainWindow):
         progress.close()
         
         if sucesso:
-            QMessageBox.information(self, "Sucesso", "O Invenio será reiniciado para aplicar a atualização.")
+            QMessageBox.information(self, "Sucesso", "O Invenio será reiniciado.")
             upd.aplicar_atualizacao() # Isso fecha o programa
+            import subprocess
+            import sys
+            import time
+            executavel = sys.executable
+            args = sys.argv[:]
+            cmd = f'cmd /c "timeout /t 2 /nobreak > NUL & start "" "{executavel}"'
+            
+            if not getattr(sys, 'frozen', False):
+                 cmd = f'cmd /c "timeout /t 2 /nobreak > NUL & start "" python "{os.path.abspath(__file__)}"'
+
+            subprocess.Popen(cmd, shell=True)
+            QApplication.quit()
+            sys.exit(0)
+            
         else:
             QMessageBox.critical(self, "Erro", "Falha ao baixar atualização. Verifique sua conexão.")
 
