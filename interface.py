@@ -9,13 +9,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                                QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
                                QComboBox, QCheckBox, QMessageBox, QFileDialog, 
-<<<<<<< HEAD
-                               QMenu, QGroupBox, QDialog, QFormLayout)
-from PySide6.QtCore import Qt, QTimer, QRect, QSize, Signal, QThread
-=======
                                QMenu, QGroupBox, QDialog, QFormLayout, QProgressDialog)
+
 from PySide6.QtCore import Qt, QTimer, QRect, QSize, QThread, Signal
->>>>>>> b9b3ae538bf17b7da839395c142a2e674acef179
 from PySide6.QtGui import QColor, QFont, QPixmap, QImage, QIcon
 
 # --- Importações do Projeto ---
@@ -171,11 +167,7 @@ QPushButton {
     min-height: 36px; max-height: 40px;
     font-family: 'Calibri';
     font-weight: bold;
-<<<<<<< HEAD
     font-size: 14px;
-=======
-    font-size: 8pt;
->>>>>>> b9b3ae538bf17b7da839395c142a2e674acef179
 }
 QPushButton:hover { background-color: #3a4252; border: none; }
 QPushButton:pressed { background-color: #435C74; border: 1px solid #3D84AA; border-radius: 2px; }
@@ -228,7 +220,7 @@ QScrollBar:vertical { background: #454F61; width: 6px; }
 QScrollBar::handle:vertical { background: #5D697E; min-height: 15px; border-radius: 3px; }
 """
 
-<<<<<<< HEAD
+# --- WORKER PARA CONEXÃO DE REDE (Não trava a tela) ---
 class WorkerConexao(QThread):
     # Sinais para comunicar com a interface principal
     finalizado = Signal(bool, str, str) # (Sucesso, Mensagem, CaminhoConfirmado)
@@ -267,7 +259,8 @@ class WorkerConexao(QThread):
             self.finalizado.emit(False, "LOCAL (Timeout)", "")
         except Exception as e:
             self.finalizado.emit(False, "LOCAL (Erro)", "")
-=======
+
+# --- WORKER PARA UPDATER (Verifica atualizações) ---
 class CheckUpdateWorker(QThread):
     update_encontrado = Signal(str, str) # tag, url
 
@@ -279,7 +272,6 @@ class CheckUpdateWorker(QThread):
         tem_update, tag, url = self.upd.verificar_atualizacao()
         if tem_update:
             self.update_encontrado.emit(tag, url)
->>>>>>> b9b3ae538bf17b7da839395c142a2e674acef179
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -851,7 +843,6 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             self.cfg.update({"ip": i_ip.text(), "path": i_path.text(), "user": i_user.text(), "pass": i_pass.text(), "usar_servidor": chk.isChecked()})
             config.salvar(self.cfg); QMessageBox.information(self, "Info", "Reinicie.")
-<<<<<<< HEAD
             
     def setup_placeholder(self):
         """Cria o widget de aviso quando não há arquivos."""
@@ -920,7 +911,6 @@ class MainWindow(QMainWindow):
             y = (geo.height() - h_vazio) // 2
             
             self.widget_vazio.setGeometry(x, y, w_vazio, h_vazio)
-=======
     
     # === MÉTODOS DE UPDATE ===
     def mostrar_aviso_update(self, tag, url):
@@ -954,7 +944,6 @@ class MainWindow(QMainWindow):
             upd.aplicar_atualizacao() # Isso fecha o programa
         else:
             QMessageBox.critical(self, "Erro", "Falha ao baixar atualização. Verifique sua conexão.")
->>>>>>> b9b3ae538bf17b7da839395c142a2e674acef179
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
