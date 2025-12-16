@@ -276,7 +276,7 @@ class CheckUpdateWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Invenio 2.2")
+        self.setWindowTitle("Invenio 2.3")
         
         # Carrega config
         self.cfg = config.carregar()
@@ -333,7 +333,7 @@ class MainWindow(QMainWindow):
             self.atualizar_lista()
     
         # === SISTEMA DE UPDATE ===
-        self.VERSAO_ATUAL = "2.2" 
+        self.VERSAO_ATUAL = "2.3" 
         self.worker_update = CheckUpdateWorker(self.VERSAO_ATUAL)
         self.worker_update.update_encontrado.connect(self.mostrar_aviso_update)
         self.worker_update.start()
@@ -341,6 +341,8 @@ class MainWindow(QMainWindow):
         # === CORREÇÃO DE JANELA ===
         # Executa a restauração da geometria logo após a janela ser criada
         QTimer.singleShot(10, self.restaurar_geometria)
+        
+        QTimer.singleShot(2000, self.aplicar_regra_content_center)
 
     def restaurar_geometria(self):
         """Aplica a posição de forma segura, evitando bugs visuais."""
@@ -591,25 +593,48 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Erro ao focar Inventor: {e}")
 
-    # =================================
-
     def atualizar_lista(self):
         self.table.setRowCount(0)
-        regs = dados.ler_registros(self.caminho_db_atual, self.chk_lixeira.isChecked(), self.in_busca.text(), self.chk_desenhos.isChecked())
-        self.table.setRowCount(len(regs))
-        for i, row in enumerate(regs):
-            # row[9] é o caminho completo do arquivo
-            caminho_arquivo = row[9].lower() if len(row) > 9 else ""
-            icone_atual = self.icon_ipt # Padrão (Peça)
-            
-            if caminho_arquivo.endswith(".idw"):
-                icone_atual = self.icon_idw
-            elif caminho_arquivo.endswith(".iam"):
-                icone_atual = self.icon_iam
+        
+        raiz_custom = self.cfg.get("pasta_raiz_arquivos", "")
+        
+        # Chama a função e recebe a lista e o caminho do CSV usado
+        try:
+            regs, caminho_csv_usado = dados.ler_registros(
+                self.caminho_db_atual, 
+                self.chk_lixeira.isChecked(), 
+                self.in_busca.text(), 
+                self.chk_desenhos.isChecked(),
+                raiz_personalizada=raiz_custom
+            )
+        except Exception as e:
+            # Se der erro ao ler, cria uma lista vazia para não fechar o programa
+            print(f"Erro ao ler registros: {e}")
+            regs = []
+            caminho_csv_usado = self.caminho_db_atual
 
-            # Cria o item da primeira coluna (CÓDIGO) e define o ícone
+        # Atualiza qual banco de dados estamos usando (PC ou Pendrive)
+        if caminho_csv_usado != self.caminho_db_atual:
+            self.caminho_db_atual = caminho_csv_usado
+            self.lbl_rede.setText("MODO: EXTERNO")
+            self.lbl_rede.setStyleSheet("color: #EBCB8B; font-weight: bold;")
+
+        self.table.setRowCount(len(regs))
+        
+        for i, row in enumerate(regs):
+            # --- SEGURANÇA: Se a linha vier quebrada, pula ela ---
+            if len(row) < 10: 
+                continue
+            # ----------------------------------------------------
+
+            caminho_arquivo = row[9].lower()
+            icone_atual = self.icon_ipt 
+            
+            if caminho_arquivo.endswith(".idw"): icone_atual = self.icon_idw
+            elif caminho_arquivo.endswith(".iam"): icone_atual = self.icon_iam
+
             item_cod = QTableWidgetItem(row[1])
-            item_cod.setIcon(icone_atual) # <--- Aplica o ícone aqui
+            item_cod.setIcon(icone_atual)
             item_cod.setData(Qt.UserRole, row[9])
             
             c = QColor("white")
@@ -625,10 +650,7 @@ class MainWindow(QMainWindow):
             for k in range(5): self.table.item(i, k).setForeground(c)
             
         if len(regs) == 0:
-            self.widget_vazio.show()
-            self.widget_vazio.adjustSize() # Garante que o tamanho está correto
-            # Força um evento de resize para calcular a posição central
-            self.ao_redimensionar_tabela(None) 
+            self.widget_vazio.show(); self.widget_vazio.adjustSize(); self.ao_redimensionar_tabela(None) 
         else:
             self.widget_vazio.hide()
 
@@ -818,8 +840,8 @@ class MainWindow(QMainWindow):
             self.btn_sync.setEnabled(True)
             
             # Tenta configurar Content Center do Inventor
-            app = inventor.obter_app()
-            if app: inventor.configurar_content_center(app, caminho_unc)
+            #app = inventor.obter_app()
+            #if app: inventor.configurar_content_center(app, caminho_unc)
             
         else:
             # Falha (Vermelho)
@@ -831,18 +853,100 @@ class MainWindow(QMainWindow):
             
         # Atualiza a lista independente do resultado (para mostrar local ou rede)
         self.atualizar_lista()
+        
+        self.aplicar_regra_content_center()
 
     def janela_servidor(self):
-        dlg = QDialog(self); dlg.setWindowTitle("Config"); dlg.resize(300, 200)
+        dlg = QDialog(self); dlg.setWindowTitle("Configurações Gerais"); dlg.resize(450, 300)
         form = QFormLayout(dlg)
+        
+        # --- 1. CONFIGURAÇÃO DE PASTA RAIZ (MANUAL) ---
+        lbl_raiz = QLabel("<b>Localização Manual dos Arquivos:</b>")
+        
+        row_raiz = QHBoxLayout()
+        self.in_raiz_custom = QLineEdit(self.cfg.get("pasta_raiz_arquivos", ""))
+        self.in_raiz_custom.setPlaceholderText("Deixe vazio para usar automático...")
+        
+        # --- CORREÇÃO DO BOTÃO ... ---
+        btn_buscar_raiz = QPushButton("...")
+        btn_buscar_raiz.setFixedWidth(40) # Aumentei um pouco para 40
+        # Aplicamos um estilo direto para "vencer" o estilo global que estava escondendo ele
+        btn_buscar_raiz.setStyleSheet("""
+            QPushButton {
+                background-color: #3B4252;
+                border: 1px solid #4C566A;
+                border-radius: 3px;
+                padding: 0px; /* Remove o padding que escondia o texto */
+                font-weight: bold;
+                font-size: 14px;
+                min-height: 28px;
+            }
+            QPushButton:hover {
+                background-color: #4C566A;
+                border: 1px solid #88C0D0;
+            }
+        """)
+        btn_buscar_raiz.clicked.connect(self.buscar_pasta_raiz) 
+        # -----------------------------
+        
+        row_raiz.addWidget(self.in_raiz_custom)
+        row_raiz.addWidget(btn_buscar_raiz)
+
+        # --- 2. CONFIGURAÇÕES DE REDE ---
+        lbl_rede = QLabel("<b>Configurações de Servidor/Rede:</b>")
         i_ip = QLineEdit(self.cfg.get("ip")); i_path = QLineEdit(self.cfg.get("path"))
         i_user = QLineEdit(self.cfg.get("user")); i_pass = QLineEdit(self.cfg.get("pass")); i_pass.setEchoMode(QLineEdit.Password)
-        chk = QCheckBox("Usar Servidor"); chk.setChecked(self.cfg.get("usar_servidor", False))
-        form.addRow("IP:", i_ip); form.addRow("Pasta:", i_path); form.addRow("User:", i_user); form.addRow("Pass:", i_pass); form.addRow(chk)
-        btn = QPushButton("Salvar"); btn.clicked.connect(dlg.accept); form.addRow(btn)
+        
+        # --- 3. DEFINIÇÃO DOS CHECKBOXES ---
+        chk_servidor = QCheckBox("Habilitar Sincronização")
+        chk_servidor.setChecked(self.cfg.get("usar_servidor", False))
+        
+        chk_cc_rede = QCheckBox("Usar Content Center da Rede")
+        chk_cc_rede.setChecked(self.cfg.get("usar_cc_rede", False))
+
+        # --- 4. ADICIONANDO AO LAYOUT ---
+        form.addRow(lbl_raiz)
+        form.addRow("Pasta Raiz:", row_raiz)
+        form.addRow(QLabel("<small style='color:gray'>Use isso se moveu os arquivos ou trocou de PC (ex: Pendrive)</small>"))
+        form.addRow(QLabel("")) # Espaço em branco
+        
+        form.addRow(lbl_rede)
+        form.addRow("IP:", i_ip); form.addRow("Pasta:", i_path); 
+        form.addRow("User:", i_user); form.addRow("Pass:", i_pass)
+        
+        form.addRow(chk_servidor)
+        form.addRow(chk_cc_rede)
+        
+        btn = QPushButton("Salvar Tudo")
+        btn.setMinimumHeight(40)
+        btn.clicked.connect(dlg.accept)
+        form.addRow(btn)
+        
         if dlg.exec():
-            self.cfg.update({"ip": i_ip.text(), "path": i_path.text(), "user": i_user.text(), "pass": i_pass.text(), "usar_servidor": chk.isChecked()})
-            config.salvar(self.cfg); QMessageBox.information(self, "Info", "Reinicie.")
+            self.cfg.update({
+                "pasta_raiz_arquivos": self.in_raiz_custom.text(),
+                "ip": i_ip.text(), "path": i_path.text(), 
+                "user": i_user.text(), "pass": i_pass.text(), 
+                "usar_servidor": chk_servidor.isChecked(),
+                "usar_cc_rede": chk_cc_rede.isChecked()
+            })
+            config.salvar(self.cfg)
+            self.aplicar_regra_content_center()
+            self.atualizar_lista()
+            QMessageBox.information(self, "Info", "Configurações aplicadas!")
+    
+    def buscar_pasta_raiz(self):
+        """Abre a janela nativa do Windows para escolher a pasta."""
+        pasta = QFileDialog.getExistingDirectory(
+            self, 
+            "Selecione a pasta Raiz (onde estão as pastas '3d' e 'desenhos')"
+        )
+        
+        # Se o usuário escolheu algo (não cancelou)
+        if pasta:
+            # Substitui as barras do Windows para evitar erros
+            pasta = os.path.abspath(pasta)
+            self.in_raiz_custom.setText(pasta)
             
     def setup_placeholder(self):
         """Cria o widget de aviso quando não há arquivos."""
@@ -958,6 +1062,45 @@ class MainWindow(QMainWindow):
             
         else:
             QMessageBox.critical(self, "Erro", "Falha ao baixar atualização. Verifique sua conexão.")
+            
+    def aplicar_regra_content_center(self):
+        """
+        Define automaticamente se o Inventor usa o CC da Rede ou Local.
+        """
+        app = inventor.obter_app()
+        if not app: return # Se o Inventor não estiver aberto, não faz nada
+        
+        usar_rede = self.cfg.get("usar_cc_rede", False)
+        pasta_alvo = ""
+        modo = ""
+
+        # --- CENÁRIO 1: REDE (Config ativada E Rede conectada) ---
+        if usar_rede and self.caminho_rede_ativo:
+            pasta_alvo = self.caminho_rede_ativo
+            modo = "REDE"
+            
+        # --- CENÁRIO 2: LOCAL (Pendrive, Offline ou Config desativada) ---
+        else:
+            # Tenta pegar a pasta raiz personalizada (Pendrive)
+            raiz_custom = self.cfg.get("pasta_raiz_arquivos", "")
+            
+            if raiz_custom and os.path.exists(raiz_custom):
+                pasta_alvo = raiz_custom
+                modo = "LOCAL (Custom)"
+            else:
+                # Se não tiver custom, usa a pasta onde está o CSV atual
+                pasta_alvo = os.path.dirname(os.path.abspath(self.caminho_db_atual))
+                modo = "LOCAL (Padrão)"
+
+        # Aplica a mudança no Inventor
+        sucesso, msg = inventor.configurar_content_center(app, pasta_alvo)
+        
+        # Feedback no Console (Opcional)
+        print(f"[{modo}] Tentativa de configurar CC: {msg}")
+        
+        # Se quiser feedback visual na barra de status:
+        if sucesso and "Atualizado" in msg:
+            self.lbl_rede.setToolTip(f"Content Center: {modo}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

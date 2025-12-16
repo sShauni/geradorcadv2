@@ -113,43 +113,45 @@ def executar_ilogic(app, codigo_vb):
             try: os.remove(caminho_temp)
             except: pass
 
-# --- NOVA FUNÇÃO: CONFIGURAR BIBLIOTECA NO SERVIDOR ---
-def configurar_content_center(app, pasta_rede):
+def configurar_content_center(app, pasta_raiz):
     """
-    Configura o caminho dos arquivos do Content Center.
-    Retorna (Sucesso, Mensagem de Erro/Sucesso)
+    Modifica o .ipj ativo para apontar o Content Center para 'pasta_raiz/Content Center Files'.
     """
+    if not app: return False, "Inventor fechado."
+    
     try:
-        # 1. Tenta criar a pasta na rede (Testa permissão de escrita)
-        caminho_cc_rede = os.path.join(pasta_rede, "Content Center Files")
-        if not os.path.exists(caminho_cc_rede):
-            try:
-                os.makedirs(caminho_cc_rede)
-            except Exception as e:
-                return False, f"Sem permissão para criar pasta no servidor:\n{e}"
-            
-        # 2. Acessa o Projeto Ativo
-        design_proj = app.DesignProjectManager.ActiveDesignProject
+        # 1. Define qual será o caminho final da biblioteca
+        caminho_cc_alvo = os.path.join(pasta_raiz, "Content Center Files")
         
-        # Verifica se o projeto permite edição
-        # (Alguns projetos são 'Somente Leitura' ou Single User travados)
-        if not design_proj:
-            return False, "Nenhum projeto ativo encontrado."
+        # 2. Garante que a pasta existe (O Inventor exige isso antes de configurar)
+        if not os.path.exists(caminho_cc_alvo):
+            try:
+                os.makedirs(caminho_cc_alvo)
+            except Exception as e:
+                return False, f"Erro ao criar pasta CC: {e}"
 
-        # 3. Aplica a mudança
-        caminho_atual = design_proj.ContentCenterPath
+        # 3. Acessa o Gerenciador de Projetos
+        manager = app.DesignProjectManager
+        projeto_ativo = manager.ActiveDesignProject
         
-        if caminho_atual.lower() != caminho_cc_rede.lower():
-            # Tenta definir o caminho
+        # 4. Verifica se já está configurado (Evita salvar sem necessidade)
+        caminho_atual = projeto_ativo.ContentCenterPath
+        
+        # Normaliza as barras para comparar paths (Windows usa \ mas as vezes vem /)
+        path_a = os.path.normpath(caminho_atual).lower()
+        path_b = os.path.normpath(caminho_cc_alvo).lower()
+        
+        if path_a != path_b:
             try:
-                design_proj.ContentCenterPath = caminho_cc_rede
-                design_proj.Save()
+                # --- AQUI ACONTECE A MÁGICA ---
+                projeto_ativo.ContentCenterPath = caminho_cc_alvo
+                projeto_ativo.Save() # Salva a alteração no arquivo .ipj
+                # ------------------------------
+                return True, f"IPJ Atualizado para:\n{caminho_cc_alvo}"
             except Exception as e:
-                return False, f"O Inventor recusou o caminho de rede.\nVerifique se o Projeto (.ipj) não é somente leitura.\nErro: {e}"
-                
-            return True, f"Configurado para:\n{caminho_cc_rede}"
+                return False, f"Erro ao salvar .ipj (Verifique se é Somente Leitura): {e}"
         else:
-            return True, "Já configurado corretamente."
+            return True, "IPJ já estava correto."
             
     except Exception as e:
-        return False, f"Erro genérico ao configurar: {e}"
+        return False, f"Erro na API do Inventor: {e}"
