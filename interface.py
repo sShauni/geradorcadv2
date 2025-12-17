@@ -598,7 +598,6 @@ class MainWindow(QMainWindow):
         
         raiz_custom = self.cfg.get("pasta_raiz_arquivos", "")
         
-        # Chama a função e recebe a lista e o caminho do CSV usado
         try:
             regs, caminho_csv_usado = dados.ler_registros(
                 self.caminho_db_atual, 
@@ -608,51 +607,19 @@ class MainWindow(QMainWindow):
                 raiz_personalizada=raiz_custom
             )
         except Exception as e:
-            # Se der erro ao ler, cria uma lista vazia para não fechar o programa
             print(f"Erro ao ler registros: {e}")
             regs = []
             caminho_csv_usado = self.caminho_db_atual
 
-        # Atualiza qual banco de dados estamos usando (PC ou Pendrive)
-        if caminho_csv_usado != self.caminho_db_atual:
+        # --- CORREÇÃO AQUI: Só muda para EXTERNO se NÃO houver REDE ativa ---
+        if self.caminho_rede_ativo:
+            # Se a rede está ativa, mantemos o que o WorkerConexao escreveu
+            pass 
+        elif caminho_csv_usado != config.ARQUIVO_CSV_LOCAL:
+            # Se não tem rede, mas o CSV é diferente do local (ex: Pendrive)
             self.caminho_db_atual = caminho_csv_usado
             self.lbl_rede.setText("MODO: EXTERNO")
             self.lbl_rede.setStyleSheet("color: #EBCB8B; font-weight: bold;")
-
-        self.table.setRowCount(len(regs))
-        
-        for i, row in enumerate(regs):
-            # --- SEGURANÇA: Se a linha vier quebrada, pula ela ---
-            if len(row) < 10: 
-                continue
-            # ----------------------------------------------------
-
-            caminho_arquivo = row[9].lower()
-            icone_atual = self.icon_ipt 
-            
-            if caminho_arquivo.endswith(".idw"): icone_atual = self.icon_idw
-            elif caminho_arquivo.endswith(".iam"): icone_atual = self.icon_iam
-
-            item_cod = QTableWidgetItem(row[1])
-            item_cod.setIcon(icone_atual)
-            item_cod.setData(Qt.UserRole, row[9])
-            
-            c = QColor("white")
-            if row[8] == "INATIVO": c = QColor("gray")
-            elif row[8] == "MODIFICADO": c = QColor("#88C0D0"); item_cod.setFont(QFont("Segoe UI", 9, QFont.Bold))
-            elif "DESENHO" in row[4].upper(): c = QColor("#81A1C1")
-            
-            self.table.setItem(i, 0, item_cod)
-            self.table.setItem(i, 1, QTableWidgetItem(row[4]))
-            self.table.setItem(i, 2, QTableWidgetItem(row[6]))
-            self.table.setItem(i, 3, QTableWidgetItem(row[7]))
-            self.table.setItem(i, 4, QTableWidgetItem(row[8]))
-            for k in range(5): self.table.item(i, k).setForeground(c)
-            
-        if len(regs) == 0:
-            self.widget_vazio.show(); self.widget_vazio.adjustSize(); self.ao_redimensionar_tabela(None) 
-        else:
-            self.widget_vazio.hide()
 
     def ao_selecionar(self):
         sel = self.table.selectedItems()
