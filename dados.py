@@ -71,24 +71,50 @@ def garantir_csv(caminho):
 def ler_registros(caminho_csv, mostrar_inativos=False, termo_busca="", ocultar_desenhos=False, raiz_personalizada=None):
     registros = []
     
-    # Se existir um CSV na raiz personalizada (Pendrive), usa ele!
-    if raiz_personalizada:
+    # --- LOGICA DE PRIORIDADE CORRIGIDA ---
+    # 1. Se estamos em rede (definido pela interface), caminho_csv já é o da rede.
+    # 2. Só forçamos o Pendrive se não estivermos tentando usar a rede.
+    if raiz_personalizada and not ("\\\\" in caminho_csv): 
         csv_pendrive = os.path.join(raiz_personalizada, "registro_pecas.csv")
         if os.path.exists(csv_pendrive):
             caminho_csv = csv_pendrive
 
     if os.path.exists(caminho_csv):
         try:
+            # Tenta abrir com UTF-8 (Padrão)
             with open(caminho_csv, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f); next(reader, None); registros = list(reader)
-        except UnicodeDecodeError:
+        except:
             try:
+                # Fallback para ANSI/Excel
                 with open(caminho_csv, 'r', encoding='cp1252') as f:
                     reader = csv.reader(f); next(reader, None); registros = list(reader)
-            except: pass
+            except: 
+                return [], caminho_csv
+    else:
+        # Se o arquivo não existe no servidor, retorna vazio para não travar
+        return [], caminho_csv
     
     resultados = []
     termo = termo_busca.lower()
+    
+    for row in reversed(registros):
+        while len(row) < 10: row.append("") # Segurança contra linhas corrompidas
+        
+        status = row[8]
+        tipo = row[4]
+        
+        # Resolve o caminho real para os ícones e abertura
+        row[9] = resolver_caminho(caminho_csv, row[9], raiz_personalizada)
+
+        if status == "INATIVO" and not mostrar_inativos: continue
+        if ocultar_desenhos and "DESENHO" in tipo.upper(): continue
+        
+        txt_busca = (str(row[1]) + str(row[6]) + str(row[7])).lower()
+        if termo in txt_busca:
+            resultados.append(row)
+            
+    return resultados, caminho_csv
     
     for row in reversed(registros):
         # --- PREENCHIMENTO DE SEGURANÇA (EVITA O ERRO INDEX ERROR) ---

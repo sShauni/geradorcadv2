@@ -596,30 +596,76 @@ class MainWindow(QMainWindow):
     def atualizar_lista(self):
         self.table.setRowCount(0)
         
+        # 1. Define qual banco de dados priorizar
+        if self.caminho_rede_ativo:
+            caminho_para_ler = self.caminho_db_atual
+        else:
+            caminho_para_ler = config.ARQUIVO_CSV_LOCAL
+            
         raiz_custom = self.cfg.get("pasta_raiz_arquivos", "")
         
         try:
-            regs, caminho_csv_usado = dados.ler_registros(
-                self.caminho_db_atual, 
+            # 2. Busca os dados usando a lógica do módulo dados.py
+            regs, caminho_csv_real = dados.ler_registros(
+                caminho_para_ler, 
                 self.chk_lixeira.isChecked(), 
                 self.in_busca.text(), 
                 self.chk_desenhos.isChecked(),
-                raiz_personalizada=raiz_custom
+                raiz_custom
             )
         except Exception as e:
             print(f"Erro ao ler registros: {e}")
             regs = []
-            caminho_csv_usado = self.caminho_db_atual
+            caminho_csv_real = caminho_para_ler
 
-        # --- CORREÇÃO AQUI: Só muda para EXTERNO se NÃO houver REDE ativa ---
-        if self.caminho_rede_ativo:
-            # Se a rede está ativa, mantemos o que o WorkerConexao escreveu
-            pass 
-        elif caminho_csv_usado != config.ARQUIVO_CSV_LOCAL:
-            # Se não tem rede, mas o CSV é diferente do local (ex: Pendrive)
-            self.caminho_db_atual = caminho_csv_usado
+        # 3. Atualiza o selo de status apenas se não estiver em rede
+        if not self.caminho_rede_ativo and caminho_csv_real != config.ARQUIVO_CSV_LOCAL:
             self.lbl_rede.setText("MODO: EXTERNO")
             self.lbl_rede.setStyleSheet("color: #EBCB8B; font-weight: bold;")
+
+        # 4. Preenchimento da Tabela (Onde estava o erro de indentação)
+        self.table.setRowCount(len(regs))
+        
+        for i, row in enumerate(regs):
+            # Segurança: Pula se a linha estiver incompleta
+            if len(row) < 10: 
+                continue
+
+            caminho_arquivo = row[9].lower()
+            icone_atual = self.icon_ipt 
+            
+            if caminho_arquivo.endswith(".idw"): icone_atual = self.icon_idw
+            elif caminho_arquivo.endswith(".iam"): icone_atual = self.icon_iam
+
+            item_cod = QTableWidgetItem(row[1])
+            item_cod.setIcon(icone_atual)
+            item_cod.setData(Qt.UserRole, row[9])
+            
+            # Define cores baseado no status
+            c = QColor("white")
+            if row[8] == "INATIVO": 
+                c = QColor("gray")
+            elif row[8] == "MODIFICADO": 
+                c = QColor("#88C0D0")
+                item_cod.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            elif "DESENHO" in row[4].upper(): 
+                c = QColor("#81A1C1")
+            
+            self.table.setItem(i, 0, item_cod)
+            self.table.setItem(i, 1, QTableWidgetItem(row[4]))
+            self.table.setItem(i, 2, QTableWidgetItem(row[6]))
+            self.table.setItem(i, 3, QTableWidgetItem(row[7]))
+            self.table.setItem(i, 4, QTableWidgetItem(row[8]))
+            
+            for k in range(5): 
+                self.table.item(i, k).setForeground(c)
+            
+        # Exibe ou esconde o aviso de "Vazio"
+        if len(regs) == 0:
+            self.widget_vazio.show()
+            self.ao_redimensionar_tabela(None) 
+        else:
+            self.widget_vazio.hide()
 
     def ao_selecionar(self):
         sel = self.table.selectedItems()
@@ -795,33 +841,25 @@ class MainWindow(QMainWindow):
         self.thread_rede.start()
         
     def ao_terminar_conexao(self, sucesso, msg, caminho_unc):
-        """Chamado automaticamente quando a thread termina (após max 5s)."""
         if sucesso:
-            # Sucesso (Verde)
             self.caminho_rede_ativo = caminho_unc
-            self.caminho_db_atual = os.path.join(caminho_unc, "registro_pecas.csv")
+            # Define o caminho completo do CSV na rede
+            self.caminho_db_atual = os.path.join(caminho_unc, "registro_pecas.csv") 
+            
+            # Força a criação se o servidor estiver vazio
             dados.garantir_csv(self.caminho_db_atual)
             
             self.lbl_rede.setText(msg)
-            self.lbl_rede.setStyleSheet("color: #A3BE8C; font-weight: bold;") # Verde Nord
+            self.lbl_rede.setStyleSheet("color: #A3BE8C; font-weight: bold;")
             self.btn_sync.setEnabled(True)
-            
-            # Tenta configurar Content Center do Inventor
-            #app = inventor.obter_app()
-            #if app: inventor.configurar_content_center(app, caminho_unc)
-            
         else:
-            # Falha (Vermelho)
             self.lbl_rede.setText(msg)
-            self.lbl_rede.setStyleSheet("color: #BF616A; font-weight: bold;") # Vermelho Nord
+            self.lbl_rede.setStyleSheet("color: #BF616A; font-weight: bold;")
             self.caminho_rede_ativo = None
-            # Volta para o DB local
             self.caminho_db_atual = config.ARQUIVO_CSV_LOCAL
             
-        # Atualiza a lista independente do resultado (para mostrar local ou rede)
+        # OBRIGATÓRIO: Chama a atualização após definir os caminhos
         self.atualizar_lista()
-        
-        self.aplicar_regra_content_center()
 
     def janela_servidor(self):
         dlg = QDialog(self); dlg.setWindowTitle("Configurações Gerais"); dlg.resize(450, 300)
